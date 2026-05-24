@@ -1,0 +1,42 @@
+# =============================================================================
+# Sub-Zone Clustering (Part D)
+# =============================================================================
+# We cluster depth samples within a chosen zone across ALL wells, in a shared
+# feature space, so that "Sub-zone A" means the same rock type everywhere.
+# =============================================================================
+
+# Which zone do we subdivide?
+target_zone: "B"
+
+# Features used for clustering. perm is log-transformed (log-normal distribution).
+# Derived features add petrophysical context that raw logs alone don't capture.
+features:
+  - vsh
+  - phit
+  - log_perm           # log10(perm) — handles 5+ orders of magnitude
+  - sw
+  - effective_porosity # phit * (1 - vsh)  — porosity in the sand fraction
+  - hc_porosity        # phit * (1 - sw)   — hydrocarbon-filled porosity
+
+# Algorithm: 'kmeans' | 'gmm' | 'both' (run both and compare)
+method: both
+
+# Number of sub-zones to find
+n_clusters: 3
+
+# Range to sweep for optimal-K analysis (elbow, silhouette, BIC)
+k_search_min: 2
+k_search_max: 8
+
+# Vertical smoothing — clustering is per-sample, but real geological
+# units are continuous. We apply a rolling mode filter to suppress single-sample
+# label flips before identifying sub-zone boundaries.
+smoothing:
+  enabled: true
+  window_size: 11      # samples (at 0.2 m sampling = 2.0 m window)
+  min_run_length: 5    # discard sub-zone runs shorter than this many samples
+
+# Validation
+validation:
+  bootstrap_iterations: 50
+  leave_one_well_out: true

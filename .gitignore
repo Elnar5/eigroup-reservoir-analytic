@@ -1,0 +1,91 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.pytest_cache/
+outputs/coverage_html/
+
+# Jupyter
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# pyenv / virtualenv
+.python-version
+.venv/
+venv/
+ENV/
+env/
+
+# uv
+.uv/
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Hydra
+outputs/hydra/
+multirun/
+
+# Generated outputs (keep folder, ignore contents except .gitkeep)
+data/processed/*
+!data/processed/.gitkeep
+
+# Reports and figures — keep in repo per assignment? Usually yes.
+# Uncomment to ignore:
+# outputs/reports/*
+# outputs/figures/*
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+
+# Local config overrides (developer-specific)
+configs/local/
+
+# Large data files (raw CSVs ARE tracked — assignment requires reproducibility)
+# Do not gitignore data/raw/
+
+# Raw data — assignment CSVs, NOT committed (provided separately)
+data/raw/*.csv

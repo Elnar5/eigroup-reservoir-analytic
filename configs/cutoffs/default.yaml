@@ -1,0 +1,14 @@
+# =============================================================================
+# Net Reservoir Cutoffs
+# =============================================================================
+# Per the assignment data_dictionary.md, a sample qualifies as net reservoir if:
+#   vsh <= vsh_max  AND  phit >= phit_min
+#
+# These are starting values (geological literature standard for clastics).
+# In a production workflow, these would be calibrated to core measurements
+# or production data. Part C.1 explores how reservoir-volume estimates shift
+# as we vary vsh_max — essential context before any volume or ranking decision.
+# =============================================================================
+
+vsh_max: 0.5      # maximum volume of shale (fraction)
+phit_min: 0.08    # minimum total porosity (fraction)

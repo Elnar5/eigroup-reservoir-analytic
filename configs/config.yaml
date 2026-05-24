@@ -1,0 +1,74 @@
+# =============================================================================
+# Main pipeline configuration
+# =============================================================================
+# Hydra composes this file at runtime. Override anything from the CLI:
+#   python -m src.cli run cutoffs.vsh_max=0.4
+#   python -m src.cli run "data.wells=[1,2,3]"
+# =============================================================================
+
+defaults:
+  - cutoffs: default
+  - clustering: default
+  - _self_
+
+# -----------------------------------------------------------------------------
+# Data sources
+# -----------------------------------------------------------------------------
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  # Auto-discover wells matching this pattern; override with explicit list to subset.
+  well_pattern: "well_*.csv"
+  # Explicit list (null = use pattern). Example: wells: [1, 2, 3]
+  wells: null
+  zones_file: zones.csv
+
+# -----------------------------------------------------------------------------
+# Validity ranges from data_dictionary.md
+# Values outside these ranges are flagged as anomalies in the QC report.
+# -----------------------------------------------------------------------------
+validity:
+  vsh:    { min: 0.0,   max: 1.0 }
+  phit:   { min: 0.0,   max: 0.5 }
+  sw:     { min: 0.0,   max: 1.0 }
+  perm:   { min: 0.001, max: 15000.0 }
+
+# -----------------------------------------------------------------------------
+# Output paths
+# -----------------------------------------------------------------------------
+output:
+  reports_dir: outputs/reports
+  figures_dir: outputs/figures
+  dashboard: outputs/dashboard.html
+
+# -----------------------------------------------------------------------------
+# Runtime
+# -----------------------------------------------------------------------------
+runtime:
+  random_seed: 42
+  log_level: INFO
+  # Save intermediate parquet snapshots to data/processed for reproducibility
+  save_intermediates: true
+
+# -----------------------------------------------------------------------------
+# Sensitivity sweep (Part C.1)
+# -----------------------------------------------------------------------------
+sensitivity:
+  vsh_min: 0.30
+  vsh_max: 0.70
+  vsh_step: 0.05
+  phit_fixed: 0.08     # phit cutoff held constant
+  bootstrap_samples: 200
+  confidence_level: 0.90
+
+# -----------------------------------------------------------------------------
+# Hydra meta
+# -----------------------------------------------------------------------------
+hydra:
+  run:
+    dir: outputs/hydra/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: outputs/hydra/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: false   # CRITICAL: keep cwd at project root so relative paths work

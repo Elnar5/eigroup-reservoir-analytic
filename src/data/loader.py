@@ -223,6 +223,17 @@ def validate_well_zone_consistency(
             )
 
     for cat, items in issues.items():
-        if items:
+        if not items:
+            continue
+        if cat == "first_zone_below_log_top":
+            # This is auto-fixed by the joiner (zone top snapped to log start).
+            # Report at INFO with a clear message — not a real issue.
+            n = len(items)
+            logger.info(
+                f"{n} well(s) have a first zone top below the log start "
+                f"(by ≤0.1 m). Auto-snapped to log first depth by joiner; "
+                f"every sample is assigned to a zone."
+            )
+        else:
             logger.warning(f"Validation issue [{cat}]: {items}")
     return issues

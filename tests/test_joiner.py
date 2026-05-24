@@ -52,7 +52,11 @@ def test_assign_zones_well_isolation(simple_logs: pd.DataFrame, simple_zones: pd
     assert well_2_zones == {"X", "Y"}
 
 
-def test_assign_zones_above_first_top_is_nan() -> None:
+def test_assign_zones_above_first_top_is_snapped_to_first_zone() -> None:
+    """Per data_dictionary.md: every depth sample belongs to exactly one zone.
+    Samples shallower than the listed first zone top must still be assigned
+    to that first zone (the zone top is snapped down to the log start).
+    """
     logs = pd.DataFrame({
         "well": [1, 1, 1],
         "depth": [900.0, 1000.0, 1010.0],  # 900 is shallower than first zone top 1000
@@ -61,8 +65,33 @@ def test_assign_zones_above_first_top_is_nan() -> None:
     })
     zones = pd.DataFrame({"well": [1], "depth": [1000.0], "name": ["A"]})
     out = assign_zones(logs, zones)
-    assert pd.isna(out.iloc[0]["zone"])
+    # All samples now belong to zone A — including the 900 m sample
+    assert out.iloc[0]["zone"] == "A"
     assert out.iloc[1]["zone"] == "A"
+    assert out.iloc[2]["zone"] == "A"
+    assert out["zone"].isna().sum() == 0
+
+
+def test_assign_zones_snap_only_affects_first_zone_top() -> None:
+    """The snap only adjusts each well's earliest zone top — later zone tops
+    must remain untouched."""
+    logs = pd.DataFrame({
+        "well": [1, 1, 1, 1],
+        "depth": [900.0, 1050.0, 1150.0, 1250.0],
+        "vsh": [0.1] * 4, "phit": [0.2] * 4,
+        "sw": [0.5] * 4, "perm": [100.0] * 4,
+    })
+    zones = pd.DataFrame({
+        "well": [1, 1],
+        "depth": [1000.0, 1200.0],
+        "name": ["A", "B"],
+    })
+    out = assign_zones(logs, zones)
+    # 900 (snapped) and 1050 → A; 1150 still → A; 1250 → B
+    assert out.iloc[0]["zone"] == "A"
+    assert out.iloc[1]["zone"] == "A"
+    assert out.iloc[2]["zone"] == "A"
+    assert out.iloc[3]["zone"] == "B"
 
 
 def test_compute_dz_per_well(simple_logs: pd.DataFrame) -> None:

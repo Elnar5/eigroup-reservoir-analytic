@@ -95,8 +95,14 @@ def quality_cmd(
     zones = load_zones(raw_dir, cfg.data.zones_file)
 
     issues = validate_well_zone_consistency(logs, zones)
-    if any(issues.values()):
-        logger.warning("Cross-validation issues detected; see warnings above")
+    # Only flag at WARNING level for real (un-fixed) issues. The
+    # `first_zone_below_log_top` category is auto-fixed by the joiner.
+    real_issues = {
+        k: v for k, v in issues.items()
+        if v and k != "first_zone_below_log_top"
+    }
+    if real_issues:
+        logger.warning(f"Cross-validation issues detected: {list(real_issues.keys())}")
 
     valid_ranges = OmegaConf.to_object(cfg.validity)
     report = build_quality_report(logs, zones, valid_ranges)

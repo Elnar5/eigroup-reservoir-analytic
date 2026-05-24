@@ -45,13 +45,45 @@ def assign_zones(logs: pd.DataFrame, zones: pd.DataFrame) -> pd.DataFrame:
     -------
     pd.DataFrame
         Same as `logs` plus a `zone` column (string, NaN where unassigned).
+
+    Spec compliance
+    ---------------
+    data_dictionary.md states: "Every depth sample in the well log belongs
+    to exactly one zone." In raw zones.csv, each well's first zone top is
+    typically a few centimetres BELOW the log start (e.g. log starts at
+    1850.00 m, zone A top is at 1850.07 m). That would leave the first
+    sample of each well unassigned. We snap each well's earliest zone top
+    down to that well's first log depth so the spec holds: zero NaN zones.
     """
+    # ---- Snap each well's first zone top to the log's first depth ----
+    log_first_depth = (
+        logs.groupby("well", as_index=False)["depth"].min()
+        .rename(columns={"depth": "log_first_depth"})
+    )
+    zones_with_first = zones.merge(log_first_depth, on="well", how="left")
+
+    # For each well, find the index of its earliest zone top
+    earliest_idx = zones_with_first.groupby("well")["depth"].idxmin()
+
+    # Replace the earliest zone top's depth with the log's first depth, but
+    # only if the log starts AT or ABOVE the original zone top (defensive:
+    # if the log somehow starts deeper, we leave the zone top alone).
+    zones_snapped = zones_with_first.copy()
+    for well, idx in earliest_idx.items():
+        log_start = zones_snapped.at[idx, "log_first_depth"]
+        zone_top = zones_snapped.at[idx, "depth"]
+        if log_start <= zone_top:
+            zones_snapped.at[idx, "depth"] = log_start
+
+    zones_snapped = zones_snapped.drop(columns=["log_first_depth"])
+
+    # ---- Standard merge_asof zone assignment ----
     # merge_asof requires the `on` key to be globally sorted (per-group sort
     # is not enough in newer pandas). We sort by depth alone; the `by="well"`
     # parameter then constrains matches to the same well.
     logs_sorted = logs.sort_values("depth", kind="stable").reset_index(drop=True)
     zones_sorted = (
-        zones[["well", "depth", "name"]]
+        zones_snapped[["well", "depth", "name"]]
         .rename(columns={"name": "zone"})
         .sort_values("depth", kind="stable")
         .reset_index(drop=True)

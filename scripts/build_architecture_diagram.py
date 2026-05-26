@@ -1,227 +1,306 @@
-"""
-Generate the architecture diagram for the reservoir analytics pipeline.
+"""Generate an updated pipeline architecture diagram for slide 3.
 
-Produces a layered diagram showing data sources, processing modules, and
-outputs, with arrows indicating data flow. Pure matplotlib — no external
-graph tools required.
+Run from project root:
+    python scripts/build_architecture_v2.py
 
-Output: outputs/figures/00_architecture.png
-Usage:  python scripts/build_architecture_diagram.py
+Output:
+    outputs/figures/00_architecture.png
+
+Replaces the older 00_architecture.png. The new diagram reflects the
+final state of the pipeline: 5 CLI commands, 12 charts, 4 walkthrough
+documents, 133 tests.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
+# -----------------------------------------------------------------------------
+# Color palette (matches the presentation deck)
+# -----------------------------------------------------------------------------
+BG = "#F5F1E8"        # warm cream background
+NAVY = "#1A4D7A"      # primary
+GOLD = "#C9A769"      # section accent
+INK = "#1A1A1A"
+MUTED = "#555555"
+WHITE = "#FFFFFF"
+BORDER = "#E5E5E0"
+HIGHLIGHT = "#FFF3D6"
+SUCCESS = "#2D7D47"
 
-# Wong colour-blind safe palette (matches ZONE_COLORS / SUBZONE_COLORS in repo)
-LAYER_COLORS = {
-    "data":          "#0072B2",   # blue   — input/raw + IO
-    "analytics":     "#009E73",   # green  — pure numeric pipelines
-    "clustering":    "#E69F00",   # orange — ML
-    "visualization": "#D55E00",   # red    — outputs to humans
-    "cli":           "#999999",   # grey   — entry points
-}
+# -----------------------------------------------------------------------------
+# Figure setup
+# -----------------------------------------------------------------------------
+FIG_W = 14
+FIG_H = 6.5
+
+# Output path
+OUTPATH = Path(__file__).parent.parent / "outputs" / "figures" / "00_architecture.png"
+OUTPATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def add_box(ax, x, y, w, h, label, sublabel=None, color="#CCCCCC", text_color="white"):
-    """Add a rounded box with one or two lines of text."""
+def draw_box(ax, x, y, w, h, *, text="", color=NAVY, text_color=WHITE,
+             font_size=10, bold=False, rounded=True, subtitle=None,
+             subtitle_color=None, subtitle_size=8,
+             border_color=None, border_width=0):
+    """Draw a labelled box on the axes."""
+    boxstyle = "round,pad=0.02,rounding_size=0.05" if rounded else "square"
     box = FancyBboxPatch(
         (x, y), w, h,
-        boxstyle="round,pad=0.02,rounding_size=0.05",
-        linewidth=1.5, edgecolor="black", facecolor=color, alpha=0.9,
+        boxstyle=boxstyle,
+        facecolor=color,
+        edgecolor=border_color if border_color else color,
+        linewidth=border_width,
+        zorder=2,
     )
     ax.add_patch(box)
-    if sublabel:
-        ax.text(x + w / 2, y + h * 0.62, label,
-                ha="center", va="center", fontsize=10, weight="bold", color=text_color)
-        ax.text(x + w / 2, y + h * 0.30, sublabel,
-                ha="center", va="center", fontsize=7.5, color=text_color, style="italic")
-    else:
-        ax.text(x + w / 2, y + h / 2, label,
-                ha="center", va="center", fontsize=10, weight="bold", color=text_color)
+    if text:
+        weight = "bold" if bold else "normal"
+        # If subtitle, place title above center
+        if subtitle:
+            ax.text(
+                x + w / 2, y + h * 0.65,
+                text,
+                ha="center", va="center",
+                color=text_color, fontsize=font_size, weight=weight,
+                zorder=3,
+            )
+            ax.text(
+                x + w / 2, y + h * 0.30,
+                subtitle,
+                ha="center", va="center",
+                color=subtitle_color or text_color, fontsize=subtitle_size,
+                style="italic",
+                zorder=3,
+            )
+        else:
+            ax.text(
+                x + w / 2, y + h / 2,
+                text,
+                ha="center", va="center",
+                color=text_color, fontsize=font_size, weight=weight,
+                zorder=3,
+            )
 
 
-def add_arrow(ax, x1, y1, x2, y2, color="#444444"):
-    arr = FancyArrowPatch(
+def draw_arrow(ax, x1, y1, x2, y2, color=NAVY, lw=1.5, style="->"):
+    """Draw an arrow between two points."""
+    arrow = FancyArrowPatch(
         (x1, y1), (x2, y2),
-        arrowstyle="->", mutation_scale=14,
-        linewidth=1.2, color=color,
+        arrowstyle=style,
+        color=color,
+        linewidth=lw,
+        mutation_scale=15,
+        zorder=1,
     )
-    ax.add_patch(arr)
+    ax.add_patch(arrow)
 
 
-def main():
-    fig, ax = plt.subplots(figsize=(14, 9))
+def build_diagram():
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), facecolor=BG)
+    ax.set_facecolor(BG)
     ax.set_xlim(0, 14)
-    ax.set_ylim(0, 9)
-    ax.set_aspect("equal")
+    ax.set_ylim(0, 6.5)
     ax.axis("off")
 
-    ax.text(7, 8.5, "Reservoir Analytics Pipeline — Architecture",
-            ha="center", fontsize=16, weight="bold")
-    ax.text(7, 8.1, "7 wells · 5 zones · 18,167 samples · single-command reproducible",
-            ha="center", fontsize=10, style="italic", color="#666666")
-    # Inline colour key (replaces legend, avoids layout conflicts)
-    ax.text(
-        7, 7.8,
-        "Blue = data layer    Green = analytics    Orange = clustering (ML)    "
-        "Red = visualization    Grey = CLI / orchestration",
-        ha="center", fontsize=8.5, color="#444444",
-    )
+    # Title (small, top-left)
+    ax.text(0.3, 6.20, "PIPELINE ARCHITECTURE",
+            color=GOLD, fontsize=10, weight="bold")
+    ax.text(0.3, 5.95, "One CLI command per part. All outputs reproducible.",
+            color=MUTED, fontsize=10, style="italic")
 
-    # =========================================================================
-    # LAYER 1 — Inputs (data sources, top of diagram)
-    # =========================================================================
-    add_box(ax, 0.3, 6.8, 2.0, 0.9, "7 well CSVs",
-            sublabel="depth, vsh, phit, sw, perm",
-            color=LAYER_COLORS["data"])
-    add_box(ax, 2.6, 6.8, 1.8, 0.9, "zones.csv",
-            sublabel="35 zone tops", color=LAYER_COLORS["data"])
-    add_box(ax, 4.7, 6.8, 1.8, 0.9, "config.yaml",
-            sublabel="Hydra · cutoffs · clustering",
-            color=LAYER_COLORS["data"])
+    # ----- LAYER 1: RAW INPUT -----
+    layer1_y = 4.85
+    layer1_h = 0.6
+    ax.text(0.3, layer1_y + layer1_h + 0.15, "01  ·  RAW INPUTS",
+            color=GOLD, fontsize=8, weight="bold")
+    # 7 well CSVs
+    draw_box(ax, 0.3, layer1_y, 2.8, layer1_h,
+             text="7 well CSVs",
+             subtitle="well_1.csv … well_7.csv  ·  18,167 rows total",
+             subtitle_color="#D0D8E8",
+             color=NAVY, font_size=11, bold=True)
+    # zones.csv
+    draw_box(ax, 3.4, layer1_y, 2.6, layer1_h,
+             text="zones.csv",
+             subtitle="35 zone tops  ·  5 zones × 7 wells",
+             subtitle_color="#D0D8E8",
+             color=NAVY, font_size=11, bold=True)
 
-    # =========================================================================
-    # LAYER 2 — Data ingestion
-    # =========================================================================
-    add_box(ax, 0.3, 5.4, 2.0, 0.9, "loader.py",
-            sublabel="schema, dtype, validation",
-            color=LAYER_COLORS["data"])
-    add_box(ax, 2.6, 5.4, 1.8, 0.9, "joiner.py",
-            sublabel="merge_asof, per-well dz",
-            color=LAYER_COLORS["data"])
-    add_box(ax, 4.7, 5.4, 1.8, 0.9, "quality.py",
-            sublabel="NaN, range, saturation flags",
-            color=LAYER_COLORS["data"])
+    # ----- LAYER 2: 5 CLI COMMANDS -----
+    layer2_y = 3.0
+    cmd_w = 2.5
+    cmd_h = 1.15
+    cmd_gap = 0.2
+    layer2_total_w = 5 * cmd_w + 4 * cmd_gap
+    layer2_start_x = (14 - layer2_total_w) / 2
 
-    # Arrows: layer 1 -> layer 2
-    add_arrow(ax, 1.3, 6.8, 1.3, 6.3)
-    add_arrow(ax, 3.5, 6.8, 3.5, 6.3)
-    add_arrow(ax, 5.6, 6.8, 5.6, 6.3)
+    ax.text(0.3, layer2_y + cmd_h + 0.2, "02  ·  CLI PIPELINE  ·  src.cli",
+            color=GOLD, fontsize=8, weight="bold")
 
-    # =========================================================================
-    # LAYER 3 — Master table (the single source of truth)
-    # =========================================================================
-    add_box(ax, 1.7, 4.1, 4.3, 0.9, "master_table.parquet",
-            sublabel="(well, depth, zone, vsh, phit, sw, perm, dz)",
-            color=LAYER_COLORS["data"], text_color="white")
-    # Arrows: data layer -> master
-    add_arrow(ax, 1.3, 5.4, 2.5, 5.0)
-    add_arrow(ax, 3.5, 5.4, 3.85, 5.0)
-    add_arrow(ax, 5.6, 5.4, 5.0, 5.0)
-
-    # =========================================================================
-    # LAYER 4 — Analytics
-    # =========================================================================
-    add_box(ax, 0.3, 2.7, 1.9, 0.9, "metrics.py",
-            sublabel="Part B — 12 metrics/zone",
-            color=LAYER_COLORS["analytics"])
-    add_box(ax, 2.4, 2.7, 1.9, 0.9, "sensitivity.py",
-            sublabel="Part C.1 — sweep + CI + knee",
-            color=LAYER_COLORS["analytics"])
-    add_box(ax, 4.5, 2.7, 1.9, 0.9, "subzone.py",
-            sublabel="Part D — pooled clustering",
-            color=LAYER_COLORS["clustering"])
-
-    # Arrows: master -> analytics
-    add_arrow(ax, 3.5, 4.1, 1.3, 3.6)
-    add_arrow(ax, 3.85, 4.1, 3.35, 3.6)
-    add_arrow(ax, 4.0, 4.1, 5.45, 3.6)
-
-    # =========================================================================
-    # LAYER 5 — Visualization
-    # =========================================================================
-    add_box(ax, 1.0, 1.3, 2.4, 0.9, "field.py",
-            sublabel="charts 01-05 (PNG + HTML)",
-            color=LAYER_COLORS["visualization"])
-    add_box(ax, 3.7, 1.3, 2.4, 0.9, "clustering.py",
-            sublabel="charts 06-08 (PNG + HTML)",
-            color=LAYER_COLORS["visualization"])
-
-    # Arrows: analytics -> viz
-    add_arrow(ax, 1.3, 2.7, 1.9, 2.2)
-    add_arrow(ax, 3.35, 2.7, 2.5, 2.2)
-    add_arrow(ax, 3.35, 2.7, 4.5, 2.2)
-    add_arrow(ax, 5.45, 2.7, 4.9, 2.2)
-
-    # =========================================================================
-    # LAYER 6 — Outputs (left bottom)
-    # =========================================================================
-    add_box(ax, 1.0, 0.1, 2.4, 0.7, "outputs/figures/",
-            sublabel="10 PNG + 10 HTML",
-            color="#888888")
-    add_box(ax, 3.7, 0.1, 2.4, 0.7, "outputs/reports/",
-            sublabel="CSV + parquet + markdown",
-            color="#888888")
-    add_arrow(ax, 2.2, 1.3, 2.2, 0.85)
-    add_arrow(ax, 4.9, 1.3, 4.9, 0.85)
-
-    # =========================================================================
-    # RIGHT COLUMN — CLI + tests + glue
-    # =========================================================================
-    # CLI orchestrator
-    add_box(ax, 8.2, 6.8, 5.4, 0.9, "src/cli.py  (typer)",
-            sublabel="quality · metrics · sweep · field · subzones",
-            color=LAYER_COLORS["cli"])
-
-    # CLI -> all modules (one arrow visually summarises)
-    add_arrow(ax, 10.9, 6.8, 6.0, 4.6)
-
-    # Tests
-    add_box(ax, 8.2, 5.2, 5.4, 1.0, "tests/  (105 tests, pytest)",
-            sublabel="invariants · NaN handling · saturation · clustering · LOWO ARI",
-            color="#555555")
-
-    # Config arrow
-    ax.annotate("", xy=(8.2, 7.2), xytext=(6.5, 7.2),
-                arrowprops=dict(arrowstyle="->", color="#444444", lw=1.2))
-
-    # Engineering principles box (right bottom)
-    add_box(ax, 8.2, 2.7, 5.4, 1.8, "Engineering principles",
-            sublabel="• Hydra config (single source of truth)\n"
-                     "• 96-100% test coverage on hot paths\n"
-                     "• Pure functions, dependency-injected\n"
-                     "• PNG + HTML for every chart\n"
-                     "• ~10× CLI surface area, fail-loud",
-            color="#444444")
-
-    # Caveats box
-    add_box(ax, 8.2, 0.4, 5.4, 1.9, "Real-data findings",
-            sublabel="• 88% Zone B samples at 15,000 mD cap\n"
-                     "• Zone D NTG never exceeds 32%\n"
-                     "• Lorenz=0 on Zone B is a tool artefact\n"
-                     "• well_5 dz=0.5m (others 0.2m), handled per-well\n"
-                     "• Zone C splits into 3 reproducible sub-zones",
-            color="#222222")
-
-    # =========================================================================
-    # LAYER LEGEND
-    # =========================================================================
-    legend_handles = [
-        mpatches.Patch(color=LAYER_COLORS["data"], label="Data layer"),
-        mpatches.Patch(color=LAYER_COLORS["analytics"], label="Analytics"),
-        mpatches.Patch(color=LAYER_COLORS["clustering"], label="Clustering (ML)"),
-        mpatches.Patch(color=LAYER_COLORS["visualization"], label="Visualization"),
-        mpatches.Patch(color=LAYER_COLORS["cli"], label="CLI / orchestration"),
+    commands = [
+        ("quality", "Part A",
+         "load · join (asof) · QC",
+         "data_quality.md"),
+        ("metrics", "Part B",
+         "5 required + 7 bonus",
+         "metrics_per_zone.csv"),
+        ("sweep", "Part C.1",
+         "9 cutoffs × 35 groups",
+         "sweep_results.csv"),
+        ("field", "Part C.2",
+         "6 field-view charts",
+         "01-05.png + 09.png"),
+        ("subzones", "Part D",
+         "KMeans + GMM + LOWO",
+         "subzone_*.csv"),
     ]
-    # (Colour key is in subtitle; matplotlib legend removed to avoid layout conflicts.)
 
-    out_path = Path("outputs/figures/00_architecture.png")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Wrote {out_path}")
+    for i, (cmd, part, summary, output) in enumerate(commands):
+        x = layer2_start_x + i * (cmd_w + cmd_gap)
+        # Card
+        card = FancyBboxPatch(
+            (x, layer2_y), cmd_w, cmd_h,
+            boxstyle="round,pad=0.02,rounding_size=0.05",
+            facecolor=WHITE,
+            edgecolor=BORDER,
+            linewidth=0.8,
+            zorder=2,
+        )
+        ax.add_patch(card)
+        # Top gold strip
+        strip = FancyBboxPatch(
+            (x, layer2_y + cmd_h - 0.12), cmd_w, 0.12,
+            boxstyle="round,pad=0,rounding_size=0",
+            facecolor=GOLD,
+            edgecolor=GOLD,
+            linewidth=0,
+            zorder=3,
+        )
+        ax.add_patch(strip)
+        # Part label
+        ax.text(x + cmd_w / 2, layer2_y + cmd_h - 0.06,
+                part, ha="center", va="center",
+                color=WHITE, fontsize=8, weight="bold", zorder=4)
+        # Command name
+        ax.text(x + cmd_w / 2, layer2_y + cmd_h - 0.35,
+                cmd, ha="center", va="center",
+                color=NAVY, fontsize=14, weight="bold", zorder=4,
+                family="monospace")
+        # Summary
+        ax.text(x + cmd_w / 2, layer2_y + cmd_h - 0.65,
+                summary, ha="center", va="center",
+                color=INK, fontsize=8, zorder=4)
+        # Output (italics)
+        ax.text(x + cmd_w / 2, layer2_y + 0.2,
+                output, ha="center", va="center",
+                color=MUTED, fontsize=7.5, style="italic",
+                family="monospace", zorder=4)
+
+    # ----- LAYER 3: DELIVERABLES -----
+    layer3_y = 0.9
+    layer3_h = 1.1
+    ax.text(0.3, layer3_y + layer3_h + 0.2, "03  ·  DELIVERABLES",
+            color=GOLD, fontsize=8, weight="bold")
+
+    # Deliverable boxes
+    deliv_w = 2.5
+    deliv_gap = 0.2
+    deliv_total_w = 5 * deliv_w + 4 * deliv_gap
+    deliv_start_x = (14 - deliv_total_w) / 2
+    deliverables = [
+        ("Walkthroughs",     "4 unified MD\n~2,800 lines"),
+        ("Charts",           "12 PNG + HTML\n+ architecture"),
+        ("CSV tables",       "35 rows ×\n12 metrics"),
+        ("Dashboard",        "9 charts in\none HTML"),
+        ("Presentation",     "26-slide PPTX\nthis deck"),
+    ]
+    for i, (head, body) in enumerate(deliverables):
+        x = deliv_start_x + i * (deliv_w + deliv_gap)
+        card = FancyBboxPatch(
+            (x, layer3_y), deliv_w, layer3_h,
+            boxstyle="round,pad=0.02,rounding_size=0.05",
+            facecolor=BG,
+            edgecolor=NAVY,
+            linewidth=1,
+            zorder=2,
+        )
+        ax.add_patch(card)
+        ax.text(x + deliv_w / 2, layer3_y + layer3_h * 0.70,
+                head, ha="center", va="center",
+                color=NAVY, fontsize=11, weight="bold", zorder=3)
+        ax.text(x + deliv_w / 2, layer3_y + layer3_h * 0.32,
+                body, ha="center", va="center",
+                color=MUTED, fontsize=8.5, zorder=3,
+                linespacing=1.3)
+
+    # ----- ARROWS -----
+    # Wells + zones merge → CLI pipeline center
+    cli_center_x = 14 / 2
+    cli_top_y = layer2_y + cmd_h
+    # From the two input boxes down to the row of commands
+    draw_arrow(ax, 1.7, layer1_y, layer2_start_x + 1 * (cmd_w + cmd_gap) + cmd_w / 2,
+               cli_top_y + 0.05, color=NAVY, lw=1.8)
+    draw_arrow(ax, 4.7, layer1_y,
+               layer2_start_x + 2 * (cmd_w + cmd_gap) + cmd_w / 2,
+               cli_top_y + 0.05, color=NAVY, lw=1.8)
+
+    # CLI commands → deliverables
+    # Each command writes to multiple deliverables, so use converging lines
+    # All 5 commands → converge to a single "outputs bus", then fan out to deliverables
+    cli_bottom_y = layer2_y - 0.05
+    deliv_top_y = layer3_y + layer3_h + 0.05
+    bus_y = (cli_bottom_y + deliv_top_y) / 2
+
+    # Vertical lines from each CLI command down to the bus
+    for i in range(5):
+        cmd_x = layer2_start_x + i * (cmd_w + cmd_gap) + cmd_w / 2
+        ax.plot([cmd_x, cmd_x], [cli_bottom_y, bus_y],
+                color=GOLD, linewidth=1.0, zorder=1)
+    # Horizontal bus line connecting all CLI columns
+    bus_left = layer2_start_x + cmd_w / 2
+    bus_right = layer2_start_x + 4 * (cmd_w + cmd_gap) + cmd_w / 2
+    ax.plot([bus_left, bus_right], [bus_y, bus_y],
+            color=GOLD, linewidth=1.2, zorder=1)
+    # Vertical arrows from bus down to each deliverable
+    for i in range(5):
+        deliv_x = deliv_start_x + i * (deliv_w + deliv_gap) + deliv_w / 2
+        draw_arrow(ax, deliv_x, bus_y, deliv_x, deliv_top_y,
+                   color=GOLD, lw=1.2)
+
+    # ----- FOOTER STATS -----
+    footer_y = 0.35
+    stat_w = 2.4
+    stat_gap = 0.4
+    stats = [
+        ("18,167",  "depth samples"),
+        ("133",     "pytest tests"),
+        ("79%",     "code coverage"),
+        ("12",      "charts produced"),
+        ("4",       "walkthrough docs"),
+    ]
+    stats_total_w = 5 * stat_w + 4 * stat_gap
+    stat_start_x = (14 - stats_total_w) / 2
+
+    for i, (val, lbl) in enumerate(stats):
+        x = stat_start_x + i * (stat_w + stat_gap)
+        ax.text(x + stat_w / 2, footer_y + 0.05,
+                val, ha="center", va="bottom",
+                color=NAVY, fontsize=16, weight="bold")
+        ax.text(x + stat_w / 2, footer_y - 0.15,
+                lbl, ha="center", va="top",
+                color=MUTED, fontsize=8, style="italic")
+
+    plt.tight_layout()
+    plt.savefig(OUTPATH, dpi=200, bbox_inches="tight",
+                facecolor=BG, edgecolor="none")
+    plt.close()
+    print(f"Wrote {OUTPATH}")
 
 
 if __name__ == "__main__":
-    main()
+    build_diagram()

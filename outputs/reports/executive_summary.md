@@ -1,170 +1,177 @@
 # Executive Summary
 
-**Project:** Reservoir-volume characterization and sub-zone clustering across 7 wells in a single field.
-**Submitted by:** Kamil Muradli, Associate Data Scientist candidate.
-**Date:** 2026-05-27.
+**Reservoir Analytics — Beyond the Headline Numbers**
+
+A petrophysical investigation of 18,167 depth samples across 7 wells
+and 5 zones. Submitted in fulfilment of the eiGroup Associate Data
+Scientist technical assessment.
+
+**Author:** Elnar Babayev  ·  **Date:** 27 May 2026
 
 ---
 
-## TL;DR — five decisions this analysis supports
+## TL;DR — five findings, each backed by data
 
-1. **Zone B is the dominant flow interval (kh ≈ 10.7 M mD·m, NTG 93%), but its
-   permeability is right-censored** — 88% of net samples sit at the 15,000 mD
-   tool cap. All Zone B kh-based numbers are **conservative lower bounds**, not
-   best estimates.
+1. **A measurement anomaly shapes everything downstream.** 3,514 of
+   18,167 samples (19.34%) report permeability of exactly 15,000 mD —
+   the upper end of the documented valid range. Three pieces of
+   statistical evidence point to this being a tool ceiling, not a
+   physical maximum (log-normal distribution doesn't produce point
+   masses; the spike sits exactly at the round upper limit; the
+   saturated samples concentrate in Zone B). Under this interpretation,
+   **every Zone B kh number is a conservative lower bound, not a point
+   estimate.**
 
-2. **Zone D should be bypassed.** Net-to-gross never exceeds 32% even at the
-   loosest cutoff (vsh ≤ 0.7). The failure is on porosity, not shale content
-   — it's tight rock.
+2. **Zone D is non-reservoir, robustly.** NTG never exceeds 29% across
+   the entire 0.30–0.70 vsh cutoff sweep. The binding constraint is
+   porosity (sub-1 mD perm), not shaliness. **Cutting vsh further
+   would not change this conclusion.** Zone D should be bypassed.
 
-3. **Volume estimates differ in robustness across zones.** Zone B's NTG is
-   stable to ±13% across the entire 0.30–0.70 vsh cutoff sweep; Zone A's
-   varies by ±80%. Field strategy should commit to a calibrated cutoff and
-   document the choice — especially for Zones A and C.
+3. **Zone C splits into three reproducible sub-zones.** Pooled
+   K-Means clustering on 3,571 net samples produces three
+   monotonically ordered quality tiers (poor / moderate / best).
+   Leave-one-well-out ARI averaged across 7 folds: **0.991** — the
+   structure is essentially invariant to which well is withheld.
+   **Sub-zone 2 (best tier) holds 48% of Zone C's kh in just 29% of
+   its thickness** — a natural drilling target.
 
-4. **Within Zone C, three sub-zones reproduce across all 7 wells** (LOWO ARI
-   0.97). Sub-zone 2 (perm ≈ 1,100 mD) holds **48% of Zone C flow capacity in
-   29% of its thickness** — a natural drilling target.
+4. **Zone E is the largest defensible kh in the field at 1.2 M mD·m.**
+   Zone B's 10.7 M headline is larger, but its lower-bound nature
+   makes Zone E the safer basis for downstream flow calculations.
+   Only 1.4% of Zone E samples are saturated.
 
-5. **Well-to-well kh ranking is partly an instrument artefact.** Well 7 leads
-   on kh (2.59 M mD·m) but 30% of its samples are tool-capped. A
-   saturation-weighted ranking would change the top three.
+5. **Cross-well kh rankings are partly an instrument artefact.**
+   Well 7 leads on visible kh (2.59 M mD·m) but is 30% saturated.
+   Under the tool-ceiling interpretation, the true gap to the rest
+   of the field is larger than the table shows.
 
 ---
 
 ## Method audit
 
-### What we did
+### What we built
 
-- **Part A** — Joined 18,167 well-log samples from 7 wells to 35 zone
-  intervals via depth-asof merge. Per-well dz handled mixed sampling (well_5
-  is 0.5 m; others 0.2 m).
-
-- **Part B** — Computed 12 metrics per (well, zone): gross/net thickness,
-  NTG, avg phit, arithmetic and kh-weighted avg perm, kh, Lorenz coefficient,
-  plus diagnostic counts (NaN porosity, saturated permeability).
-
-- **Part C.1** — Swept vsh cutoff from 0.30 to 0.70 (step 0.05) → 315 metric
-  rows. Bootstrap CI on kh (200 resamples). Knee detection per (well, zone).
-
-- **Part C.2** — Five field-view charts: kh heatmap, stacked bar per well,
-  porosity-permeability cross-plot, NTG sensitivity curves, Lorenz curves.
-
-- **Part D** — Pooled K-Means + GMM clustering on Zone B (failed, instructive)
-  and Zone C (succeeded). Leave-one-well-out validation via Adjusted Rand
-  Index. Sample-level smoothing (rolling mode, min run = 5).
-
-### Three real-data issues caught in QC and flagged downstream
-
-1. **Permeability tool saturation at 15,000 mD** — 14–30% of every well's
-   samples. The fraction is highest in wells 1 and 7 (25–30%). We retain
-   saturated samples in kh calculations (excluding them would systematically
-   underestimate flow capacity) and surface the count alongside every
-   downstream metric.
-
-2. **NaN porosity in well_3** — 78 samples (4%) lack phit. These are excluded
-   from net interval calculations but counted separately (`n_phit_nan`) so
-   they never silently inflate net.
-
-3. **Heterogeneous sampling step** — well_5 is logged at 0.5 m versus 0.2 m
-   for the other six wells. dz is computed per well, so kh and net thickness
-   handle mixed sampling correctly.
+| Part | Deliverable | Output |
+|------|-------------|--------|
+| **A** | Data loading, joining, quality assessment | 18,167-row master table; 3 quality issues discovered |
+| **B** | Per-(well, zone) metrics | 35 rows × 12 metrics (5 required + 7 bonus) |
+| **C.1** | Cutoff sensitivity sweep | 315 results across 9 vsh cutoffs + bootstrap CI |
+| **C.2** | Field-level views | 6 charts — heatmap, stacked bar, crossplot, sensitivity, Lorenz, box plot |
+| **D** | Sub-zone definition | Zone C clustered into 3 reproducible sub-zones; Zone B failed informatively |
 
 ### Engineering reliability
 
-- 105 unit + invariant tests, all green.
-- Module test coverage: metrics 99%, sensitivity 96%, subzone 97%, field 100%,
-  clustering 100%, joiner 97%, loader 92%.
-- All pipeline steps reproducible via single-line CLI commands. Outputs
-  versioned in `data/processed/` (parquet) and `outputs/reports/` (CSV).
+- **133 pytest tests**, all passing
+- **79% overall coverage**, 96-100% on hot paths (metrics, sensitivity,
+  clustering, visualization)
+- Single-command reproducibility per part via the `src.cli` interface
+- All intermediates cached to parquet; all deliverables versioned in
+  `outputs/reports/`
 
 ---
 
-## Risk-flagged volume estimates
+## Three quality issues found in Part A — all by design
 
-| Zone | NTG (default cutoff) | kh field total | Confidence | Risk note |
-|------|----------------------|------------------|------------|-----------|
-| B    | 0.93                 | 10.7 M           | **High in shape, low in magnitude** | 88% tool-capped — kh is a lower bound. NTG itself is stable (Day 3 knee at 0.35) |
-| C    | 0.84                 | 0.68 M           | High      | <1% saturation, real Lorenz=0.65, clean clustering |
-| E    | 0.70                 | 1.20 M           | Medium    | ~5% saturation, moderate Lorenz=0.52 |
-| A    | 0.63                 | 0.27 M           | Medium    | NTG highly sensitive to cutoff (range 0.74-0.81), needs calibration |
-| D    | 0.10                 | 42               | **Bypass — not reservoir** | NTG never exceeds 32% at any cutoff |
-
-**Operational recommendation:** Field volume calculations should report
-Zone B's kh with an explicit "**conservative — saturation-limited**" tag,
-not as a point estimate. Zone C should be split into the three sub-zones
-identified in Part D.
+| Issue | Scope | How we handled it |
+|-------|------:|-------------------|
+| Tool saturation at 15,000 mD | 3,514 samples (19.34%) | Kept, flagged with boolean column, surfaced count alongside every downstream kh number |
+| Well 3 NaN porosity | 78 samples (0.43%) | Excluded from net mask; counted separately in `n_phit_nan` |
+| Well 5 sampling step (0.5 m vs 0.2 m elsewhere) | All well-5 samples | Per-well dz computation; every metric is depth-weighted |
 
 ---
 
-## Drilling target — Zone C sub-zone 2
+## Volume estimates with confidence flags
 
-Pooled K-Means clustering on Zone C (vsh, phit, log₁₀perm, sw, derived
-porosity features) yields three reproducible sub-zones:
-
-| Sub-zone | Avg perm | Avg phit | Total thickness | Total kh | % of Zone C kh |
-|----------|------------|----------|------------------|------------|------------------|
-| 0 (worst) | ~200 mD  | 0.140    | 335.5 m          | 68 K       | 10% |
-| 1 (mid)   | ~700 mD  | 0.206    | 437.0 m          | 303 K      | 42% |
-| **2 (best)** | **~1,100 mD** | **0.230** | **315.6 m** | **350 K** | **48%** |
-
-- Cross-well LOWO ARI: 0.95–0.99 across all 7 folds.
-- Sub-zone 2 sits **consistently at the top of Zone C in every well**
-  (typically 30–80 m shallower than sub-zone 1 base).
-- Sub-zone 1 sits at the base; sub-zone 0 (tight) is sandwiched in the
-  middle.
-
-This is a **coarsening-upward (or quality-upward) signature** with a
-tight middle, repeated identically across all 7 wells — a strong reproducible
-reservoir architecture.
-
-**Drilling target:** Sub-zone 2 (top of Zone C). Completion strategy should
-focus perforations on this interval per well.
+| Zone | NTG | Total kh (mD·m) | Saturation | Reading |
+|------|----:|----------------:|----------:|---------|
+| **A** | 0.63 | 267 K | 0% | Clean baseline. NTG range across cutoffs: 0.15–0.94 — cutoff-sensitive |
+| **B** | 0.93 | **10.7 M** | **99.85%** | Headline number; most likely a lower bound under saturation interpretation |
+| **C** | 0.84 | 680 K | 0.4% | Heterogeneous (Lorenz 0.65); 3 sub-zones identified in Part D |
+| **D** | 0.10 | 42 | 0% | Tight rock. NTG ≤ 29% at any cutoff — robust failure |
+| **E** | 0.70 | 1.2 M | 1.4% | **Most defensible high-perm zone in the field** |
 
 ---
 
-## Method awareness — why Zone B clustering "failed"
+## Robust findings vs cutoff-driven findings
 
-We initially attempted sub-zone clustering on Zone B (highest kh, highest
-NTG, present in all wells). The clustering produced reproducible but
-mathematically meaningless output: two sub-zones with **identical centroids**
-(vsh 0.243 vs 0.233, log_perm 4.17 vs 4.16) because 96% of every sub-zone
-is at the 15,000 mD tool cap.
+Five findings hold across every cutoff tested (0.30–0.70):
 
-**The high Adjusted Rand Index (0.97) was misleading:** the model was
-reproducibly clustering noise, not geology.
+- Zone B dominates field flow capacity
+- Zone D is non-reservoir
+- Well 7 leads on visible kh
+- Zone E is the most defensible high-perm zone
+- The saturation pattern is invariant to cutoff (it's a tool feature,
+  not a methodology artefact)
 
-We re-targeted clustering on Zone C, where saturation is negligible
-(<1%), Lorenz heterogeneity is 0.65, and three lithology classes resolve
-cleanly. This is the kind of method-aware diagnostic that a production
-workflow should always include — high in-sample metrics do not guarantee
-geological meaning.
+Three findings depend on the cutoff and should be reported as ranges:
 
----
-
-## Caveats and out-of-scope items
-
-- **Zone B kh is right-censored**, not point-estimated. The actual perm in
-  saturated samples could be 30,000 mD or 100,000 mD — the tool cannot tell
-  us. A production workflow would need:
-  - Higher-dynamic-range permeability tool, or
-  - Lab core measurements at saturated depths, or
-  - A censored-regression model relating phit/vsh to uncapped perm.
-
-- **Cutoffs are literature defaults** (vsh ≤ 0.5, phit ≥ 0.08). Production
-  cutoffs should be calibrated to core measurements or production data.
-
-- **No production data, no PVT, no seismic.** This analysis is well-log only.
-  Cross-well geological correlation could refine the sub-zone interpretation
-  if seismic horizon picks were available.
-
-- **The Lorenz coefficient on saturated data is not meaningful.** Zone B's
-  L=0.00 is an instrument artefact, not a geological signal — it's still
-  worth reporting (visually striking) but should not enter a heterogeneity
-  ranking.
+- Zone A's NTG (range 0.15–0.94)
+- Zone C's NTG (range 0.38–0.94)
+- Zone E's NTG (range 0.32–0.89)
 
 ---
 
-*Submitted in fulfilment of the eiGroup LLC Associate Data Scientist
-technical assessment. Full reproducible pipeline available in source tree;
-72 unit tests in `tests/`, executive deliverables in `outputs/`.*
+## Method awareness — Zone B clustering failed informatively
+
+I attempted the same K-Means clustering on Zone B as a controlled
+comparison. The result fails in a specific, predictable way:
+sub-zones 1 and 2 have log_perm centroids of **4.175938** and
+**4.176091** — a difference of 0.00015. In raw permeability units,
+that's the difference between 14,985 mD and 14,995 mD, well inside
+tool quantization noise.
+
+The clustering "succeeded" statistically (LOWO ARI 0.991) but
+produced two sub-zones that are indistinguishable in their key flow
+property. Under the saturation interpretation, this is exactly the
+predicted failure mode — the tool can't see heterogeneity above the
+ceiling. Under the alternative interpretation, Zone B is genuinely
+homogeneous in perm. The clustering output alone cannot distinguish
+between these two readings.
+
+**The lesson:** internal-consistency metrics like silhouette and ARI
+can be misleadingly high on features that have been censored. A
+production workflow should always inspect centroid separation in
+domain units, not only the algorithm's quality score.
+
+---
+
+## What better validation would require
+
+The internal validation here (silhouette, LOWO ARI, multi-algorithm
+cross-check, monotone-feature ordering) is the best possible without
+external data. Three external sources would lift the conclusions from
+internal-consistency to true external validation:
+
+1. **Core descriptions and core permeability** — gold standard.
+   Resolves the saturation-vs-physical-max question directly and
+   tests whether sub-zone boundaries correspond to observable
+   lithology changes.
+
+2. **Production logs (PLT / spinner)** — operational validation.
+   Tests whether the predicted "best" sub-zone actually produces
+   more per metre.
+
+3. **Pressure transient data** — calibrates magnitude, not just
+   ranking. Provides an analytic check on cluster-summed kh.
+
+---
+
+## Reading order for the full submission
+
+For a reviewer with limited time:
+
+1. **`outputs/dashboard.html`** — all 9 chart sections on one page (5 min)
+2. **`outputs/reports/part_c_walkthrough.md`** — sensitivity + 6 field views (15 min)
+3. **`outputs/reports/part_d_walkthrough.md`** — clustering + all case answers (15 min)
+4. **`outputs/reports/part_a_walkthrough.md`** — data + saturation discovery (10 min)
+5. **`outputs/reports/part_b_walkthrough.md`** — 5 zone signatures (10 min)
+6. **`presentation/eigroup_reservoir_analytics.pptx`** — 26-slide deck
+
+Technical reference documents remain in `outputs/reports/` for any
+detailed cross-checking.
+
+---
+
+*All numbers in this summary are computed from real data and
+reproducible via the pipeline in `src/`. Raw inputs in `data/raw/`,
+processed outputs in `outputs/`.*

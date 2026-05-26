@@ -430,6 +430,115 @@ def lorenz_curves(
 
 
 # -----------------------------------------------------------------------------
+# Chart 6: zone-quality box plot — distribution of NTG and kh across wells
+# -----------------------------------------------------------------------------
+
+def boxplot_zone_quality(
+    metrics: pd.DataFrame,
+) -> tuple[plt.Figure, go.Figure]:
+    """Side-by-side box plots: NTG distribution and log10(kh) distribution,
+    per zone, across all 7 wells.
+
+    The chart answers the case question 'which zones are consistently strong
+    or weak across the field' — a tight box means consistent behaviour
+    across wells; a wide box means well-to-well variability.
+
+    Returns
+    -------
+    (matplotlib Figure, plotly Figure)
+    """
+    df = metrics.copy()
+    df["log_kh"] = np.log10(df["kh_mD_m"].clip(lower=1.0))
+    ordered_zones = [z for z in ZONE_COLORS if z in df["zone"].unique()]
+
+    # ---- matplotlib (two subplots side by side) ----
+    fig_mpl, (ax_ntg, ax_kh) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Left: NTG distribution per zone
+    ntg_data = [df.loc[df.zone == z, "ntg"].dropna().values for z in ordered_zones]
+    bp_ntg = ax_ntg.boxplot(
+        ntg_data,
+        tick_labels=[f"Zone {z}" for z in ordered_zones],
+        patch_artist=True,
+        showmeans=True,
+        meanprops={"marker": "D", "markerfacecolor": "white", "markeredgecolor": "black"},
+    )
+    for patch, z in zip(bp_ntg["boxes"], ordered_zones):
+        patch.set_facecolor(ZONE_COLORS[z])
+        patch.set_alpha(0.7)
+    ax_ntg.set_ylabel("Net-to-Gross (NTG)")
+    ax_ntg.set_title("Reservoir quality distribution across 7 wells")
+    ax_ntg.set_ylim(0, 1)
+    ax_ntg.grid(axis="y", alpha=0.3)
+    ax_ntg.axhline(0.5, color="black", linestyle="--", alpha=0.3, linewidth=0.8)
+
+    # Right: log10(kh) distribution per zone
+    kh_data = [df.loc[df.zone == z, "log_kh"].dropna().values for z in ordered_zones]
+    bp_kh = ax_kh.boxplot(
+        kh_data,
+        tick_labels=[f"Zone {z}" for z in ordered_zones],
+        patch_artist=True,
+        showmeans=True,
+        meanprops={"marker": "D", "markerfacecolor": "white", "markeredgecolor": "black"},
+    )
+    for patch, z in zip(bp_kh["boxes"], ordered_zones):
+        patch.set_facecolor(ZONE_COLORS[z])
+        patch.set_alpha(0.7)
+    ax_kh.set_ylabel("log₁₀(kh) [mD·m]")
+    ax_kh.set_title("Flow capacity distribution across 7 wells")
+    ax_kh.grid(axis="y", alpha=0.3)
+
+    fig_mpl.suptitle(
+        "Zone consistency across the field — tight boxes = consistent, wide = variable",
+        fontsize=11, y=1.02
+    )
+    fig_mpl.tight_layout()
+
+    # ---- plotly (two subplots side by side) ----
+    from plotly.subplots import make_subplots
+    fig_plotly = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=(
+            "Reservoir quality (NTG) distribution",
+            "Flow capacity log₁₀(kh) distribution",
+        ),
+    )
+    for z in ordered_zones:
+        sub = df[df.zone == z]
+        # NTG box
+        fig_plotly.add_trace(
+            go.Box(
+                y=sub["ntg"],
+                name=f"Zone {z}",
+                marker_color=ZONE_COLORS[z],
+                boxmean=True,
+                showlegend=False,
+            ),
+            row=1, col=1,
+        )
+        # log_kh box
+        fig_plotly.add_trace(
+            go.Box(
+                y=sub["log_kh"],
+                name=f"Zone {z}",
+                marker_color=ZONE_COLORS[z],
+                boxmean=True,
+                showlegend=False,
+            ),
+            row=1, col=2,
+        )
+    fig_plotly.update_yaxes(title_text="NTG", range=[0, 1], row=1, col=1)
+    fig_plotly.update_yaxes(title_text="log₁₀(kh) [mD·m]", row=1, col=2)
+    fig_plotly.update_layout(
+        title_text="Zone consistency across the field",
+        height=500,
+        showlegend=False,
+    )
+
+    return fig_mpl, fig_plotly
+
+
+# -----------------------------------------------------------------------------
 # Save helpers
 # -----------------------------------------------------------------------------
 

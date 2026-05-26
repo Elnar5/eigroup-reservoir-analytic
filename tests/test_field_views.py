@@ -25,6 +25,7 @@ from src.analytics.metrics import compute_all_zone_metrics
 from src.analytics.sensitivity import run_vsh_sweep
 from src.visualization.field import (
     ZONE_COLORS,
+    boxplot_zone_quality,
     crossplot_phit_perm,
     heatmap_kh_by_well_zone,
     lorenz_curves,
@@ -164,3 +165,44 @@ class TestSaveChart:
         save_chart(fig_m, fig_p, "test_chart", tmp_path)
         html = (tmp_path / "test_chart.html").read_text()
         assert "plotly" in html.lower()
+
+
+# -----------------------------------------------------------------------------
+# Tests — Chart 6: boxplot_zone_quality
+# -----------------------------------------------------------------------------
+
+class TestBoxplotZoneQuality:
+
+    def test_returns_two_figures(self, metrics):
+        fig_m, fig_p = boxplot_zone_quality(metrics)
+        assert isinstance(fig_m, plt.Figure)
+        assert isinstance(fig_p, go.Figure)
+
+    def test_matplotlib_has_two_axes(self, metrics):
+        """Side-by-side panels: NTG box and log_kh box."""
+        fig_m, _ = boxplot_zone_quality(metrics)
+        assert len(fig_m.axes) == 2
+
+    def test_plotly_has_two_traces_per_zone(self, metrics):
+        """One Box trace for NTG and one for log_kh, per zone."""
+        n_zones = metrics["zone"].nunique()
+        _, fig_p = boxplot_zone_quality(metrics)
+        # 2 panels × n_zones boxes each
+        assert len(fig_p.data) == 2 * n_zones
+
+    def test_only_known_zones_shown(self, metrics):
+        """Zones not in ZONE_COLORS palette are filtered out."""
+        rogue = metrics.copy()
+        # Inject an unknown zone label
+        rogue = pd.concat([rogue, pd.DataFrame({
+            "well": [99], "zone": ["X"], "ntg": [0.5], "kh_mD_m": [1000],
+            "gross_thickness_m": [10], "net_thickness_m": [5],
+            "avg_phit": [0.2], "avg_perm_mD": [100],
+            "avg_perm_kh_weighted_mD": [100], "lorenz_coefficient": [0.4],
+            "n_samples": [50], "n_samples_net": [25],
+            "n_phit_nan": [0], "n_perm_saturated_in_net": [0],
+        })], ignore_index=True)
+        _, fig_p = boxplot_zone_quality(rogue)
+        # Zone X should not appear in any trace name
+        trace_names = {t.name for t in fig_p.data}
+        assert "Zone X" not in trace_names

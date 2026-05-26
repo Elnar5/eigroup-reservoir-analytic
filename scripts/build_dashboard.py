@@ -37,6 +37,7 @@ from src.data.joiner import build_master_table
 from src.data.loader import load_all_wells, load_zones
 from src.visualization.field import (
     ZONE_COLORS,
+    boxplot_zone_quality,
     crossplot_phit_perm,
     heatmap_kh_by_well_zone,
     lorenz_curves,
@@ -129,6 +130,7 @@ def main():
     _, lor_p = lorenz_curves(master, vsh_max=0.5, phit_min=0.08)
     _, cross_p = crossplot_phit_perm(master, sample_frac=0.40)
     _, bar_p = stacked_bar_kh_per_well(metrics)
+    _, box_p = boxplot_zone_quality(metrics)
 
     sub_charts = {}
     if "B" in labels:
@@ -217,15 +219,15 @@ def main():
 </style>
 </head><body>
 <h1>Reservoir Analytics Dashboard</h1>
-<div class="subtitle">eiGroup Associate Data Scientist assessment · 7 wells · 5 zones · 18,167 samples · 105 tests · Kamil Muradli, May 2026</div>
+<div class="subtitle">eiGroup Associate Data Scientist assessment · 7 wells · 5 zones · 18,167 samples · 133 tests · Kamil Muradli, May 2026</div>
 
 <div class="findings">
   <b>Headline findings:</b>
   <ul>
     <li>Zone B is the dominant flow interval (kh ≈ 10.7 M mD·m, NTG 93%)
-        — <b>but 88% of samples are at the 15,000 mD tool cap</b>, so its
+        — <b>but 99.85% of net samples are at the 15,000 mD tool cap</b>, so its
         kh is a conservative lower bound, not a best estimate.</li>
-    <li>Zone D is tight rock: NTG never exceeds 32% even at the loosest
+    <li>Zone D is tight rock: NTG never exceeds 29% even at the loosest
         vsh cutoff. <b>Bypass it.</b></li>
     <li>Zone C splits into 3 reproducible sub-zones across all 7 wells.
         <b>Sub-zone 2 holds 48% of Zone C kh in just 29% of its thickness</b>
@@ -260,6 +262,10 @@ def main():
     html_parts.append(embed(cross_p, "3a. Porosity-permeability cross-plot"))
     html_parts.append(embed(bar_p, "3b. Total kh per well, decomposed by zone"))
     html_parts.append("</div>")
+
+    # Section 3c — zone-quality consistency (directly answers the case prompt
+    # "which zones are consistently strong or weak across the field")
+    html_parts.append(embed(box_p, "3c. Zone consistency across wells — NTG and kh distributions"))
 
     # Section 2 — clustering (only if assignments exist)
     if "B_depth" in sub_charts or "C_depth" in sub_charts:

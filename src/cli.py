@@ -278,6 +278,7 @@ def field_cmd(
     from src.data.joiner import build_master_table
     from src.data.loader import load_all_wells, load_zones
     from src.visualization.field import (
+        boxplot_zone_quality,
         crossplot_phit_perm,
         heatmap_kh_by_well_zone,
         lorenz_curves,
@@ -338,6 +339,10 @@ def field_cmd(
     # 5. Lorenz
     fig_m, fig_p = lorenz_curves(master, vsh_max=cfg.cutoffs.vsh_max, phit_min=cfg.cutoffs.phit_min)
     save_chart(fig_m, fig_p, "05_lorenz_curves", figures_dir)
+
+    # 6. Zone-quality box plot (consistency across wells)
+    fig_m, fig_p = boxplot_zone_quality(metrics)
+    save_chart(fig_m, fig_p, "09_zone_quality_boxplot", figures_dir)
 
     logger.info(f"All field-view charts saved to {figures_dir}")
 

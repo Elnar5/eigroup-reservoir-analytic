@@ -1,679 +1,1205 @@
-"""
-Build the PowerPoint slide deck for the eiGroup presentation.
+"""Build the 26-slide presentation deck for eiGroup submission.
 
-Produces: presentation/eigroup_reservoir_analytics.pptx
-
-Every slide is built from scratch using python-pptx primitives, so once
-opened in PowerPoint, every text box, image, and shape can be freely edited,
-resized, recoloured, or replaced.
-
-Slide structure (consistent across the deck):
-    - Title bar (top, blue)
-    - Optional subtitle (italic, grey)
-    - Body: text bullets and/or one chart image
-    - Takeaway line (bottom, bold, dark blue)
-    - Slide number (bottom-right, small grey)
-
-Usage:
-    pip install python-pptx
-    python scripts/build_slides.py
+Run from project root:
+    python scripts/build_slides_v2.py
 
 Output:
     presentation/eigroup_reservoir_analytics.pptx
+
+This script builds a 16:9 widescreen deck with a warm cream background,
+navy + gold accents, and embeds the charts already produced under
+outputs/figures/.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
-from pptx.enum.text import PP_ALIGN
-from pptx.util import Inches, Pt
-
-# =============================================================================
-# Style — brand colours matched to the field-view charts
-# =============================================================================
-COLOR_PRIMARY = RGBColor(0x00, 0x72, 0xB2)    # blue (Zone B colour)
-COLOR_TEXT_DARK = RGBColor(0x22, 0x22, 0x22)
-COLOR_TEXT_GREY = RGBColor(0x66, 0x66, 0x66)
-COLOR_TAKEAWAY = RGBColor(0x00, 0x5A, 0x8E)   # darker blue
-COLOR_ACCENT_WARN = RGBColor(0xD5, 0x5E, 0x00)   # red — for "warning" findings
-COLOR_ACCENT_GOOD = RGBColor(0x00, 0x9E, 0x73)   # green — for positive findings
-
-# Repo root
-REPO = Path(__file__).resolve().parent.parent
-FIGS = REPO / "outputs" / "figures"
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.util import Inches, Pt, Emu
 
 
-# =============================================================================
-# Helper functions
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Color palette
+# -----------------------------------------------------------------------------
+BG_CREAM = RGBColor(0xF5, 0xF1, 0xE8)            # background
+NAVY = RGBColor(0x1A, 0x4D, 0x7A)                # primary
+GOLD = RGBColor(0xC9, 0xA7, 0x69)                # section accent
+INK = RGBColor(0x1A, 0x1A, 0x1A)                 # body dark
+MUTED = RGBColor(0x55, 0x55, 0x55)               # body muted
+PAGE_NUM = RGBColor(0x99, 0x99, 0x99)            # page number
+SUCCESS = RGBColor(0x2D, 0x7D, 0x47)             # zone-good
+WARNING = RGBColor(0xB8, 0x86, 0x0B)             # saturation/warning
+DANGER = RGBColor(0xC0, 0x39, 0x2B)              # zone-d / negative
+ORANGE = RGBColor(0xD6, 0x7D, 0x2C)              # zone-c
+ZONE_E = RGBColor(0xA8, 0x39, 0x2B)              # zone-e red
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+HIGHLIGHT_BG = RGBColor(0xFF, 0xF3, 0xD6)        # amber tint for emphasis
+TABLE_HEADER_BG = RGBColor(0xF0, 0xEE, 0xE6)
+TABLE_ROW_BG = RGBColor(0xFF, 0xFF, 0xFF)
+TABLE_BORDER = RGBColor(0xF0, 0xEE, 0xE6)
+QUOTE_BG = RGBColor(0xFF, 0xFF, 0xFF)
 
-def add_title(slide, text, top=Inches(0.3)):
-    """Blue title bar at top of slide."""
-    tx = slide.shapes.add_textbox(Inches(0.4), top, Inches(12.5), Inches(0.7))
-    tf = tx.text_frame
+# -----------------------------------------------------------------------------
+# Geometry (16:9 widescreen)
+# -----------------------------------------------------------------------------
+SLIDE_W = Inches(13.333)
+SLIDE_H = Inches(7.5)
+
+MARGIN_L = Inches(0.6)
+MARGIN_R = Inches(0.6)
+MARGIN_T = Inches(0.45)
+MARGIN_B = Inches(0.4)
+
+CONTENT_W = SLIDE_W - MARGIN_L - MARGIN_R    # 12.13"
+CONTENT_TOP = Inches(0.95)                    # below section label
+
+# Paths
+PROJECT_ROOT = Path(__file__).parent.parent
+FIG_DIR = PROJECT_ROOT / "outputs" / "figures"
+OUT_PATH = PROJECT_ROOT / "presentation" / "eigroup_reservoir_analytics.pptx"
+OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+TOTAL_SLIDES = 26  # updated at end if needed
+
+
+# -----------------------------------------------------------------------------
+# Helper builders
+# -----------------------------------------------------------------------------
+def add_background(slide, color=BG_CREAM):
+    """Fill the entire slide with a solid color rectangle (behind everything)."""
+    bg = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, 0, 0, SLIDE_W, SLIDE_H
+    )
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = color
+    bg.line.fill.background()
+    # send to back
+    spTree = bg._element.getparent()
+    spTree.remove(bg._element)
+    spTree.insert(2, bg._element)
+    return bg
+
+
+def add_text(
+    slide, x, y, w, h, text, *,
+    font_size=11, color=INK, bold=False, italic=False,
+    align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, font_name="Calibri",
+    spacing=None,
+):
+    """Insert a simple text box."""
+    tb = slide.shapes.add_textbox(x, y, w, h)
+    tf = tb.text_frame
     tf.word_wrap = True
+    tf.margin_left = Inches(0)
+    tf.margin_right = Inches(0)
+    tf.margin_top = Inches(0)
+    tf.margin_bottom = Inches(0)
+    tf.vertical_anchor = anchor
+
     p = tf.paragraphs[0]
+    p.alignment = align
+    if spacing is not None:
+        p.line_spacing = spacing
     run = p.add_run()
     run.text = text
-    run.font.size = Pt(28)
-    run.font.bold = True
-    run.font.color.rgb = COLOR_PRIMARY
-    return tx
+    run.font.size = Pt(font_size)
+    run.font.color.rgb = color
+    run.font.bold = bold
+    run.font.italic = italic
+    run.font.name = font_name
+    return tb
 
 
-def add_subtitle(slide, text, top=Inches(1.0)):
-    tx = slide.shapes.add_textbox(Inches(0.4), top, Inches(12.5), Inches(0.4))
-    tf = tx.text_frame
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = text
-    run.font.size = Pt(14)
-    run.font.italic = True
-    run.font.color.rgb = COLOR_TEXT_GREY
-    return tx
+def add_section_label(slide, idx, text, color=GOLD):
+    """Top section label like '07 — PART A · THE DISCOVERY'."""
+    label = f"{idx:02d}  —  {text}"
+    add_text(
+        slide, MARGIN_L, MARGIN_T, CONTENT_W, Inches(0.3),
+        label, font_size=10, color=color, bold=True,
+    )
 
 
-def add_bullets(slide, bullets, left=Inches(0.4), top=Inches(1.5),
-                width=Inches(7.0), height=Inches(5.0), font_size=Pt(16)):
-    """Add a bulleted list. Each item is either a string or a dict with
-    'text' and optional 'highlight' (bool) keys."""
-    tx = slide.shapes.add_textbox(left, top, width, height)
-    tf = tx.text_frame
-    tf.word_wrap = True
-
-    for i, item in enumerate(bullets):
-        if isinstance(item, dict):
-            text = item.get("text", "")
-            highlight = item.get("highlight", False)
-        else:
-            text = str(item)
-            highlight = False
-
-        if i == 0:
-            p = tf.paragraphs[0]
-        else:
-            p = tf.add_paragraph()
-        p.space_before = Pt(4)
-        p.space_after = Pt(4)
-
-        # Bullet character + content
-        run = p.add_run()
-        run.text = "•  " + text
-        run.font.size = font_size
-        run.font.bold = highlight
-        run.font.color.rgb = COLOR_ACCENT_WARN if highlight else COLOR_TEXT_DARK
-
-    return tx
-
-
-def add_takeaway(slide, text):
-    """Bold takeaway line near the bottom of the slide."""
-    tx = slide.shapes.add_textbox(Inches(0.4), Inches(6.5), Inches(12.5), Inches(0.6))
-    tf = tx.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.alignment = PP_ALIGN.LEFT
-    run = p.add_run()
-    run.text = "→  " + text
-    run.font.size = Pt(15)
-    run.font.bold = True
-    run.font.italic = True
-    run.font.color.rgb = COLOR_TAKEAWAY
-    return tx
-
-
-def add_image(slide, image_path, left, top, width=None, height=None):
-    """Add an image to the slide if it exists, else add a placeholder text."""
-    if image_path is None or not Path(image_path).exists():
-        tx = slide.shapes.add_textbox(left, top,
-                                      width or Inches(5), height or Inches(3))
-        tf = tx.text_frame
-        p = tf.paragraphs[0]
-        p.alignment = PP_ALIGN.CENTER
-        run = p.add_run()
-        run.text = f"[ image missing: {Path(image_path).name if image_path else '?'} ]"
-        run.font.italic = True
-        run.font.color.rgb = COLOR_TEXT_GREY
-        return tx
-    if width and height:
-        return slide.shapes.add_picture(str(image_path), left, top,
-                                        width=width, height=height)
-    if width:
-        return slide.shapes.add_picture(str(image_path), left, top, width=width)
-    return slide.shapes.add_picture(str(image_path), left, top, height=height)
-
-
-def add_slide_number(slide, n, total):
-    tx = slide.shapes.add_textbox(Inches(12.3), Inches(7.05), Inches(1.0), Inches(0.3))
-    tf = tx.text_frame
+def add_page_number(slide, idx, total=TOTAL_SLIDES):
+    """Bottom-right page number."""
+    box = slide.shapes.add_textbox(
+        SLIDE_W - Inches(1.0), SLIDE_H - Inches(0.35),
+        Inches(0.7), Inches(0.25),
+    )
+    tf = box.text_frame
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Inches(0)
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.RIGHT
-    run = p.add_run()
-    run.text = f"{n} / {total}"
-    run.font.size = Pt(10)
-    run.font.color.rgb = COLOR_TEXT_GREY
+    r = p.add_run()
+    r.text = f"{idx:02d} / {total:02d}"
+    r.font.size = Pt(8)
+    r.font.color.rgb = PAGE_NUM
+    r.font.name = "Calibri"
 
 
-def add_horizontal_divider(slide, y=Inches(1.05)):
-    """A thin blue line below the title."""
-    line = slide.shapes.add_shape(
-        MSO_SHAPE.RECTANGLE, Inches(0.4), y, Inches(12.5), Inches(0.04),
+def add_title(slide, text, color=INK, font_size=24):
+    """Main slide title, just under the section label."""
+    add_text(
+        slide, MARGIN_L, Inches(0.85), CONTENT_W, Inches(0.6),
+        text, font_size=font_size, color=color, bold=True,
     )
+
+
+def add_subtitle(slide, text, y=Inches(1.5), color=MUTED, font_size=14, italic=False):
+    """Subtitle below the title."""
+    add_text(
+        slide, MARGIN_L, y, CONTENT_W, Inches(0.45),
+        text, font_size=font_size, color=color, italic=italic,
+    )
+
+
+def add_big_number(slide, x, y, value, label, *,
+                   value_size=54, label_size=10,
+                   value_color=NAVY, label_color=MUTED, w=Inches(2.6)):
+    """A '3,514 / depth samples' style number block."""
+    add_text(slide, x, y, w, Inches(0.85), value,
+             font_size=value_size, color=value_color, bold=True, spacing=0.9)
+    add_text(slide, x, y + Inches(0.95), w, Inches(0.3), label,
+             font_size=label_size, color=label_color)
+
+
+def add_quote_card(slide, x, y, w, h, *, bg=QUOTE_BG, accent=GOLD, accent_width=Inches(0.04)):
+    """A card with a colored left strip — used for highlighted callouts."""
+    # Background
+    box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
+    box.fill.solid()
+    box.fill.fore_color.rgb = bg
+    box.line.color.rgb = TABLE_BORDER
+    box.line.width = Pt(0.5)
+    # Accent strip on left
+    strip = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, accent_width, h)
+    strip.fill.solid()
+    strip.fill.fore_color.rgb = accent
+    strip.line.fill.background()
+    return box
+
+
+def add_image_safely(slide, image_path, x, y, w=None, h=None):
+    """Add an image if the file exists, else a placeholder rectangle."""
+    p = Path(image_path)
+    if p.exists():
+        kwargs = {}
+        if w is not None:
+            kwargs["width"] = w
+        if h is not None:
+            kwargs["height"] = h
+        return slide.shapes.add_picture(str(p), x, y, **kwargs)
+    # Placeholder
+    placeholder_w = w if w is not None else Inches(6)
+    placeholder_h = h if h is not None else Inches(4)
+    box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, placeholder_w, placeholder_h)
+    box.fill.solid()
+    box.fill.fore_color.rgb = RGBColor(0xEE, 0xEE, 0xEE)
+    box.line.color.rgb = RGBColor(0xCC, 0xCC, 0xCC)
+    tf = box.text_frame
+    tf.word_wrap = True
+    p_run = tf.paragraphs[0]
+    p_run.alignment = PP_ALIGN.CENTER
+    p_run.vertical_anchor = MSO_ANCHOR.MIDDLE
+    r = p_run.add_run()
+    r.text = f"[chart missing: {p.name}]"
+    r.font.size = Pt(10)
+    r.font.color.rgb = MUTED
+    r.font.italic = True
+    return box
+
+
+def add_left_accent_strip(slide, color=NAVY, width=Inches(0.06)):
+    """Vertical navy strip on the left side — used on the title slide."""
+    strip = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, width, SLIDE_H)
+    strip.fill.solid()
+    strip.fill.fore_color.rgb = color
+    strip.line.fill.background()
+
+
+def add_horizontal_rule(slide, y, *, color=TABLE_BORDER, x=MARGIN_L,
+                       w=None, height=Pt(0.5)):
+    """Thin horizontal divider."""
+    if w is None:
+        w = CONTENT_W
+    line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, height)
     line.fill.solid()
-    line.fill.fore_color.rgb = COLOR_PRIMARY
+    line.fill.fore_color.rgb = color
     line.line.fill.background()
 
 
-# =============================================================================
-# Slide builders — one function per slide
-# =============================================================================
-
-def slide_1_title(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank
-
-    # Big centered title
-    tx = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.3), Inches(1.5))
-    tf = tx.text_frame
+def style_table_cell(cell, *, text, font_size=10, bold=False, color=INK,
+                     bg=None, align=PP_ALIGN.LEFT):
+    """Style a python-pptx table cell."""
+    cell.text = ""  # clear
+    tf = cell.text_frame
+    tf.margin_left = Inches(0.06)
+    tf.margin_right = Inches(0.06)
+    tf.margin_top = Inches(0.04)
+    tf.margin_bottom = Inches(0.04)
     p = tf.paragraphs[0]
-    p.alignment = PP_ALIGN.CENTER
-    run = p.add_run()
-    run.text = "Reservoir-Volume Characterization"
-    run.font.size = Pt(40)
-    run.font.bold = True
-    run.font.color.rgb = COLOR_PRIMARY
-
-    # Subtitle
-    tx2 = slide.shapes.add_textbox(Inches(1), Inches(3.7), Inches(11.3), Inches(0.8))
-    tf2 = tx2.text_frame
-    p2 = tf2.paragraphs[0]
-    p2.alignment = PP_ALIGN.CENTER
-    run2 = p2.add_run()
-    run2.text = "Method, findings, and a defensible field strategy across 7 wells"
-    run2.font.size = Pt(20)
-    run2.font.italic = True
-    run2.font.color.rgb = COLOR_TEXT_GREY
-
-    # Author strip
-    tx3 = slide.shapes.add_textbox(Inches(1), Inches(5.8), Inches(11.3), Inches(0.5))
-    tf3 = tx3.text_frame
-    p3 = tf3.paragraphs[0]
-    p3.alignment = PP_ALIGN.CENTER
-    run3 = p3.add_run()
-    run3.text = "Kamil Muradli   ·   eiGroup Associate Data Scientist assessment   ·   May 2026"
-    run3.font.size = Pt(14)
-    run3.font.color.rgb = COLOR_TEXT_DARK
-    return slide
+    p.alignment = align
+    r = p.add_run()
+    r.text = text
+    r.font.size = Pt(font_size)
+    r.font.color.rgb = color
+    r.font.bold = bold
+    r.font.name = "Calibri"
+    if bg is not None:
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = bg
 
 
-def slide_2_qc_findings(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Three QC findings that shape every downstream decision")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Caught at load-time, surfaced in every metric")
-    bullets = [
-        "well_3: 78 NaN porosity samples (4%) → excluded from net, counted separately",
-        "well_5: logged at 0.5 m spacing; others at 0.2 m → dz computed per-well",
-        {"text": "ALL 7 wells: 15-30% of samples at the 15,000 mD permeability cap",
-         "highlight": True},
-        " ",
-        "Saturation matters most: it makes kh estimates a LOWER BOUND, not a best estimate",
-        "Each finding surfaces as a counter column in every downstream metric",
-        "QC is not paperwork — it drives the credibility of every number that follows",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.4), width=Inches(12.5))
-    add_takeaway(slide, "The QC step is the source of every caveat in this analysis.")
-
-
-def slide_3_per_zone(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Net-to-Gross by zone tells the geological story")
-    add_horizontal_divider(slide)
-    add_image(slide, FIGS / "02_kh_stacked_bar.png",
-              left=Inches(0.4), top=Inches(1.3), width=Inches(7.5))
-    bullets = [
-        "Zone B dominates: 93% NTG, 10× the kh of any other zone",
-        "Zone D: 10% NTG everywhere — tight rock, not reservoir",
-        "Zone C: silent second story (84% NTG, 680K mD·m)",
-        "Same pattern in all 7 wells — geology is reproducible",
-        " ",
-        "Field volume = sum of (zone × well) kh contributions",
-        "Operational ranking: B → C → E → A → D",
-    ]
-    add_bullets(slide, bullets, left=Inches(8.2), top=Inches(1.4),
-                width=Inches(5.0), font_size=Pt(14))
-    add_takeaway(slide, "NTG is more diagnostic than any single permeability number.")
-
-
-def slide_4_sensitivity(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Cutoff sensitivity tells us which volumes are brittle")
-    add_horizontal_divider(slide)
-    add_image(slide, FIGS / "04_ntg_sensitivity.png",
-              left=Inches(0.4), top=Inches(1.3), width=Inches(7.5))
-    bullets = [
-        "Zone B NTG: stable across the full sweep (range only 0.11)",
-        "Zone A NTG: highly sensitive (0.15 → 0.95 across 0.30-0.70 cutoffs)",
-        "Knee for all zones at vsh ≈ 0.35 (same in all 7 wells)",
-        "Default cutoff (0.5) sits on the flat part of each curve",
-        " ",
-        {"text": "Zone B is the MOST defensible volume estimate in the field",
-         "highlight": True},
-    ]
-    add_bullets(slide, bullets, left=Inches(8.2), top=Inches(1.4),
-                width=Inches(5.0), font_size=Pt(14))
-    add_takeaway(slide, "Zone B's volume estimate doesn't depend on cutoff choice — that's robustness.")
-
-
-def slide_5_lorenz(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "When 'homogeneous' is an instrument artefact")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Lorenz curves expose tool censoring")
-    add_image(slide, FIGS / "05_lorenz_curves.png",
-              left=Inches(0.4), top=Inches(1.5), width=Inches(6.5))
-    bullets = [
-        "Zone C: L = 0.65 — genuinely heterogeneous, top 30% delivers 80% of kh",
-        "Zone E: L = 0.52, Zone A: L = 0.46 — moderate heterogeneity",
-        {"text": "Zone B: L = 0.00 — but this is a TOOL ARTEFACT, not homogeneity",
-         "highlight": True},
-        " ",
-        "88% of Zone B samples are at the 15,000 mD cap",
-        "The Lorenz curve flattens into the 45° diagonal mechanically",
-        "Lesson: don't interpret Lorenz on censored data",
-    ]
-    add_bullets(slide, bullets, left=Inches(7.3), top=Inches(1.5),
-                width=Inches(5.8), font_size=Pt(14))
-    add_takeaway(slide, "The strongest signal of saturation isn't a number — it's a flat Lorenz curve.")
-
-
-def slide_6_well_ranking(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Saturation pollutes well rankings")
-    add_horizontal_divider(slide)
-    add_image(slide, FIGS / "01_kh_heatmap.png",
-              left=Inches(0.4), top=Inches(1.3), width=Inches(7.5))
-    bullets = [
-        "well_7 ranks #1 by kh (2.59 M) — but 30% tool-capped",
-        "well_1 ranks #2 (2.27 M) — 25% tool-capped",
-        "wells 2/4/5/6 at 14-15% saturation — more defensible 'best wells'",
-        " ",
-        {"text": "⚠ marker in heatmap = saturation count per (well, zone)",
-         "highlight": False},
-        " ",
-        "Production fix: saturation-weighted kh ranking",
-        "Long-term fix: uncensored perm tool + core calibration",
-    ]
-    add_bullets(slide, bullets, left=Inches(8.2), top=Inches(1.4),
-                width=Inches(5.0), font_size=Pt(14))
-    add_takeaway(slide, "The highest-kh well may just be the most censored well.")
-
-
-def slide_7_zone_d(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Zone D should be bypassed")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Tight rock, not reservoir — fails on porosity, not shale")
-    bullets = [
-        "Zone D NTG never exceeds 32% — even at the loosest cutoff (vsh ≤ 0.7)",
-        "avg phit in Zone D = 0.092 — right at the phit cutoff (0.08)",
-        "Samples fail the POROSITY test, not the shale test",
-        "No matter how generous the shale tolerance, Zone D is not reservoir",
-        " ",
-        "All 7 wells: same finding",
-        "Operational implication: skip Zone D in volume calculations",
-        "Don't drill into it; don't model it; document the bypass decision",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.5), width=Inches(12.5))
-    add_takeaway(slide, "Bypassing Zone D is unambiguous. The geology says so.")
-
-
-def slide_8_bootstrap(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Where our kh estimates are most uncertain")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Bootstrap confidence intervals: precision vs accuracy")
-    bullets = [
-        "Method: 200 resamples per (well, zone) group, 90% percentile CI",
-        "Most groups: tight CIs (high sample counts, low variance)",
-        "Zone D: wide CI relative to point estimate — but magnitudes are tiny",
-        "Zone B: tight CI — but high SAMPLING precision doesn't fix saturation BIAS",
-        " ",
-        "Bootstrap measures sampling uncertainty, not measurement bias",
-        "A censored tool is a measurement bias the bootstrap can't see",
-        "Saturation remains the dominant uncertainty in Zone B kh",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.5), width=Inches(12.5))
-    add_takeaway(slide,
-                 "Our numbers are PRECISE. Whether they're ACCURATE depends on the tool — different problem.")
-
-
-def slide_9_clustering_choice(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Two clustering attempts: Zone B failed (instructive), Zone C worked")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Method awareness: knowing when not to trust your own model")
-
-    # Left column — Zone B
-    tx1 = slide.shapes.add_textbox(Inches(0.4), Inches(1.5), Inches(6.2), Inches(0.5))
-    p1 = tx1.text_frame.paragraphs[0]
-    r1 = p1.add_run()
-    r1.text = "Zone B (initial target)"
-    r1.font.size = Pt(18)
-    r1.font.bold = True
-    r1.font.color.rgb = COLOR_ACCENT_WARN
-
-    b1 = [
-        "Highest kh, highest NTG — obvious first choice",
-        "Silhouette peaks at k=2 (0.65), drops at k=3",
-        "But: two clusters have IDENTICAL centroids",
-        "  – vsh 0.243 vs 0.233 (Δ = 0.01)",
-        "  – log_perm 4.17 vs 4.16",
-        "  – 96% saturated in EVERY sub-zone",
-        "LOWO ARI = 0.97 — reproducibly meaningless",
-    ]
-    add_bullets(slide, b1, left=Inches(0.4), top=Inches(2.0),
-                width=Inches(6.2), font_size=Pt(13))
-
-    # Right column — Zone C
-    tx2 = slide.shapes.add_textbox(Inches(7.0), Inches(1.5), Inches(6.0), Inches(0.5))
-    p2 = tx2.text_frame.paragraphs[0]
-    r2 = p2.add_run()
-    r2.text = "Zone C (re-targeted)"
-    r2.font.size = Pt(18)
-    r2.font.bold = True
-    r2.font.color.rgb = COLOR_ACCENT_GOOD
-
-    b2 = [
-        "<1% saturation — clean signal",
-        "Real Lorenz = 0.65 (Slide 5)",
-        "NTG 84%, kh 680K, all 7 wells",
-        "3 sub-zones with 5× perm separation",
-        "Same vertical stack in every well",
-        "LOWO ARI = 0.97 — meaningfully reproducible",
-    ]
-    add_bullets(slide, b2, left=Inches(7.0), top=Inches(2.0),
-                width=Inches(6.0), font_size=Pt(13))
-
-    add_takeaway(slide,
-                 "Clustering can only see what the tool measures. When tools are censored, clusters reproduce the censoring.")
-
-
-def slide_10_zone_c_clusters(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Zone C splits into 3 reproducible sub-zones")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Three rock types, one geological column, 7 wells")
-    add_image(slide, FIGS / "06_zonec_clusters_log.png",
-              left=Inches(0.4), top=Inches(1.5), width=Inches(7.0))
-    bullets = [
-        "Sub-zone 0: tight  (~200 mD, phit 0.14, vsh 0.45)",
-        "Sub-zone 1: mid    (~700 mD, phit 0.21, vsh 0.34)",
-        {"text": "Sub-zone 2: best  (~1,100 mD, phit 0.23, vsh 0.29)", "highlight": True},
-        " ",
-        "Vertical stack consistent across all 7 wells:",
-        "  – Best on top  ·  tight in middle  ·  mid at base",
-        "LOWO Adjusted Rand Index = 0.95–0.99",
-    ]
-    add_bullets(slide, bullets, left=Inches(7.8), top=Inches(1.5),
-                width=Inches(5.5), font_size=Pt(14))
-    add_takeaway(slide, "Three orders of magnitude separation. Same stack in every well. Real geology.")
-
-
-def slide_11_drilling_target(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Sub-zone 2 is the drilling target")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "29% of Zone C thickness — 48% of Zone C flow capacity")
-    bullets = [
-        "Sub-zone 2 thickness: 315.6 m total across 7 wells (29% of Zone C)",
-        "Sub-zone 2 kh:        350 K mD·m         (48% of Zone C)",
-        "Geological location: TOP of Zone C in every well",
-        "Saturation:           <1% — the 1,100 mD estimate is defensible",
-        " ",
-        {"text": "Completion implication: place perforations in the top third of Zone C",
-         "highlight": True},
-        " ",
-        "Drilling implication: vertical wells targeting Zone C should land at sub-zone 2 depth",
-        "Risk: minimal — geology reproduces across all 7 wells",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.5), width=Inches(12.5))
-    add_takeaway(slide, "The clearest operational recommendation in this whole analysis.")
-
-
-def slide_12_k_choice(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "k=3 by geological intuition, not by silhouette pick")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Choosing the number of clusters — defensibly")
-    add_image(slide, FIGS / "07_zonec_silhouette.png",
-              left=Inches(0.4), top=Inches(1.5), width=Inches(7.0))
-    bullets = [
-        "Silhouette ranks k=2 highest in both zones (0.65 / 0.39)",
-        "BIC monotonically prefers higher k (GMM overfits noise)",
-        " ",
-        "We chose k=3 for geological reasons:",
-        "  – Three lithology classes standard in clastics",
-        "  – At k=3 Zone C centroids separate 5× in perm",
-        "  – At k=2 two real lithologies collapse together",
-        "  – At k=4 we'd be splitting noise",
-        " ",
-        "Post-hoc validation: log_perm centroids 1.92, 2.44, 2.65",
-    ]
-    add_bullets(slide, bullets, left=Inches(7.6), top=Inches(1.5),
-                width=Inches(5.7), font_size=Pt(13))
-    add_takeaway(slide, "Don't outsource the lithology count to a silhouette score.")
-
-
-def slide_13_engineering(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Production-ready engineering")
-    add_horizontal_divider(slide)
-    add_subtitle(slide, "Single-command reproducible pipeline, fully tested")
-    add_image(slide, FIGS / "00_architecture.png",
-              left=Inches(0.4), top=Inches(1.5), width=Inches(8.5))
-    bullets = [
-        "105 pytest tests across 6 modules",
-        "96-100% coverage on hot paths",
-        "  – metrics: 99%, sensitivity: 96%",
-        "  – clustering: 97%, viz: 100%",
-        " ",
-        "Single-command CLI:",
-        "  quality → metrics → sweep → field → subzones",
-        " ",
-        "Every chart: matplotlib PNG + Plotly HTML",
-        "Reproducible from raw CSVs in 5 commands",
-    ]
-    add_bullets(slide, bullets, left=Inches(9.2), top=Inches(1.5),
-                width=Inches(4.0), font_size=Pt(12))
-    add_takeaway(slide, "This is a pipeline, not a notebook — re-runnable when new wells arrive.")
-
-
-def slide_14_summary(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Five decisions this analysis supports")
-    add_horizontal_divider(slide)
-
-    bullets = [
-        {"text": "Treat Zone B kh as a CONSERVATIVE LOWER BOUND — not a best estimate",
-         "highlight": True},
-        " ",
-        {"text": "BYPASS Zone D — it's tight rock, not reservoir",
-         "highlight": True},
-        " ",
-        {"text": "TARGET sub-zone 2 (top of Zone C) for drilling and completion",
-         "highlight": True},
-        " ",
-        {"text": "RE-RANK wells using saturation-weighted kh, not raw kh",
-         "highlight": True},
-        " ",
-        {"text": "CALIBRATE Zone A and Zone C cutoffs to core data before publishing volumes",
-         "highlight": True},
-    ]
-    add_bullets(slide, bullets, top=Inches(1.5), width=Inches(12.5), font_size=Pt(18))
-    add_takeaway(slide,
-                 "Happy to go deep on any of these — and to discuss what I'd do differently with more data.")
-
-
-# =============================================================================
-# Backup slides
-# =============================================================================
-
-def slide_B1_bootstrap_detail(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Backup: bootstrap method details")
-    add_horizontal_divider(slide)
-    bullets = [
-        "Per (well, zone) group, 200 resamples with replacement",
-        "Within each resample: apply same net cutoffs (vsh ≤ 0.5, phit ≥ 0.08)",
-        "kh = Σ(perm × dz) on the resampled net interval",
-        "Report kh mean + 5th/95th percentiles = 90% CI",
-        "Seed = 42 for reproducibility",
-        " ",
-        "Cost: 35 groups × 200 resamples × 3 cutoffs ≈ 21,000 kh calculations (~10s)",
-        "Optional via CLI: python -m src.cli sweep --bootstrap",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.5), width=Inches(12.5))
-
-
-def slide_B2_smoothing(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Backup: clustering smoothing rationale")
-    add_horizontal_divider(slide)
-    bullets = [
-        "Problem: sample-level clustering produces 1-sample label flips",
-        "Real geological units are continuous, metres-thick",
-        " ",
-        "Step 1 — rolling mode (window=11, ~2.2 m at 0.2 m sampling):",
-        "  Each sample's label is the mode of itself and ±5 neighbours",
-        " ",
-        "Step 2 — absorb short runs (min_run_length=5):",
-        "  Any uninterrupted run shorter than 5 samples (1 m)",
-        "  is merged into the longer neighbouring run",
-        " ",
-        "Per-well processing — depth ordering doesn't cross well boundaries",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.4), width=Inches(12.5), font_size=Pt(15))
-
-
-def slide_B3_pooled(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Backup: why pooled clustering, not per-well")
-    add_horizontal_divider(slide)
-    bullets = [
-        "Alternative: cluster each well independently, then 'match' labels",
-        "Problem: KMeans 'cluster 0' in well 1 is unrelated to 'cluster 0' in well 2",
-        "Matching requires Hungarian algorithm or similar — complex, brittle",
-        " ",
-        "Pooled approach: fit ONE model on all wells' Zone C samples",
-        "Every sample gets a label in the same space",
-        "Cluster ID = rock type, globally",
-        " ",
-        "Cross-well consistency tested via leave-one-well-out (ARI)",
-        "Trade-off: assumes the same rock types exist in every well",
-        "  – validated by the 0.97 LOWO ARI",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.4), width=Inches(12.5), font_size=Pt(15))
-
-
-def slide_B4_label_reorder(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Backup: stable label ordering via log_perm")
-    add_horizontal_divider(slide)
-    bullets = [
-        "KMeans labels are arbitrary — re-running may swap labels",
-        "Without reordering: 'sub-zone 2' could be tight in one run, best in next",
-        " ",
-        "Solution: after fitting, compute mean log_perm per cluster",
-        "Relabel so cluster 0 = lowest mean log_perm, k-1 = highest",
-        " ",
-        "Guarantees: across runs, across LOWO folds, the same",
-        "  cluster ID corresponds to the same rock type",
-        " ",
-        "Simpler than Hungarian-assignment matching",
-        "Stable when features include log_perm (which they do)",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.4), width=Inches(12.5), font_size=Pt(15))
-
-
-def slide_B5_extensions(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_title(slide, "Backup: what I'd add with more data")
-    add_horizontal_divider(slide)
-    bullets = [
-        "Core measurements at saturated depths:",
-        "  – Calibrate the 15,000 mD cap → uncensored perm distribution",
-        "  – Lab phit / vsh check → calibrate net cutoffs",
-        " ",
-        "Production data:",
-        "  – Correlate kh estimates with measured production rates",
-        "  – Validate sub-zone 2 as drilling target empirically",
-        " ",
-        "Seismic horizons:",
-        "  – Geological correlation across wells",
-        "  – Confirm sub-zone vertical stacking is geological, not statistical",
-        " ",
-        "Censored regression to recover real perm from (phit, vsh) in saturated samples",
-    ]
-    add_bullets(slide, bullets, top=Inches(1.4), width=Inches(12.5), font_size=Pt(14))
-
-
-# =============================================================================
-# Main
-# =============================================================================
-
-def main():
+# -----------------------------------------------------------------------------
+# Per-slide builders
+# -----------------------------------------------------------------------------
+def build_presentation():
     prs = Presentation()
-    # 16:9 widescreen
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
 
-    slides_main = [
-        slide_1_title,
-        slide_2_qc_findings,
-        slide_3_per_zone,
-        slide_4_sensitivity,
-        slide_5_lorenz,
-        slide_6_well_ranking,
-        slide_7_zone_d,
-        slide_8_bootstrap,
-        slide_9_clustering_choice,
-        slide_10_zone_c_clusters,
-        slide_11_drilling_target,
-        slide_12_k_choice,
-        slide_13_engineering,
-        slide_14_summary,
+    blank = prs.slide_layouts[6]  # Blank
+
+    def new_slide(idx, section_text=None):
+        slide = prs.slides.add_slide(blank)
+        add_background(slide)
+        if section_text:
+            add_section_label(slide, idx, section_text)
+        add_page_number(slide, idx)
+        return slide
+
+    # === SLIDE 1 — Title ===
+    s = prs.slides.add_slide(blank)
+    add_background(s)
+    add_left_accent_strip(s, NAVY)
+    add_text(s, Inches(0.8), Inches(2.4), Inches(8),  Inches(0.35),
+             "RESERVOIR ANALYTICS  ·  MAY 2026", font_size=11,
+             color=GOLD, bold=True)
+    add_text(s, Inches(0.8), Inches(2.8), Inches(11), Inches(1.8),
+             "Beyond the\nHeadline Numbers", font_size=54,
+             color=INK, bold=True, spacing=1.0)
+    add_text(s, Inches(0.82), Inches(5.0), Inches(11), Inches(0.5),
+             "A petrophysical investigation of 18,167 depth samples.",
+             font_size=18, color=MUTED, italic=True)
+    add_horizontal_rule(s, Inches(5.9), x=Inches(0.82), w=Inches(2.5),
+                        color=GOLD, height=Pt(1.5))
+    add_text(s, Inches(0.82), Inches(6.1), Inches(11), Inches(0.35),
+             "Kamil Muradli", font_size=14, color=INK, bold=True)
+    add_text(s, Inches(0.82), Inches(6.45), Inches(11), Inches(0.3),
+             "eiGroup Associate Data Scientist Assessment",
+             font_size=11, color=MUTED)
+    add_text(s, Inches(0.82), Inches(6.75), Inches(11), Inches(0.3),
+             "Submitted May 2026", font_size=10, color=PAGE_NUM)
+
+    # === SLIDE 2 — The Assignment ===
+    s = new_slide(2, "OVERVIEW  ·  THE ASSIGNMENT")
+    add_title(s, "Four parts. One coherent investigation.")
+    add_subtitle(s, "Each part both stands alone and informs the next.")
+
+    parts = [
+        ("Part A", "Data Quality",
+         "Load, join, validate. Discover what the dataset hides."),
+        ("Part B", "Per-Zone Metrics",
+         "Five required + seven bonus diagnostics across 35 (well, zone) groups."),
+        ("Part C", "Cutoff Sensitivity & Field Views",
+         "Sweep cutoffs to bound conclusions. Visualize the field from six angles."),
+        ("Part D", "Sub-Zone Definition",
+         "Find geologically meaningful sub-zones consistent across wells."),
     ]
-    slides_backup = [
-        slide_B1_bootstrap_detail,
-        slide_B2_smoothing,
-        slide_B3_pooled,
-        slide_B4_label_reorder,
-        slide_B5_extensions,
+    col_w = Inches(2.95)
+    gap = Inches(0.15)
+    start_x = MARGIN_L
+    y0 = Inches(2.3)
+    for i, (tag, name, desc) in enumerate(parts):
+        x = start_x + (col_w + gap) * i
+        # Card
+        card = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y0, col_w, Inches(3.5))
+        card.fill.solid()
+        card.fill.fore_color.rgb = WHITE
+        card.line.color.rgb = TABLE_BORDER
+        card.line.width = Pt(0.5)
+        # Gold strip top
+        strip = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y0, col_w, Inches(0.06))
+        strip.fill.solid()
+        strip.fill.fore_color.rgb = GOLD
+        strip.line.fill.background()
+        # Tag
+        add_text(s, x + Inches(0.25), y0 + Inches(0.3), col_w - Inches(0.5), Inches(0.3),
+                 tag, font_size=10, color=GOLD, bold=True)
+        # Name
+        add_text(s, x + Inches(0.25), y0 + Inches(0.65), col_w - Inches(0.5), Inches(0.6),
+                 name, font_size=18, color=NAVY, bold=True, spacing=1.0)
+        # Desc
+        add_text(s, x + Inches(0.25), y0 + Inches(1.45), col_w - Inches(0.5), Inches(1.8),
+                 desc, font_size=11, color=MUTED, spacing=1.3)
+
+    add_text(s, MARGIN_L, Inches(6.5), CONTENT_W, Inches(0.4),
+             "→  Five required deliverables, four exceeded. Every part backed by tests and reproducible CLI.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 3 — Our Approach ===
+    s = new_slide(3, "OVERVIEW  ·  PIPELINE ARCHITECTURE")
+    add_title(s, "One command per part. Reproducible end-to-end.")
+    add_subtitle(s, "Each CLI command writes parquet caches, CSV deliverables, and Markdown reports.")
+    # Embed the architecture diagram — sized to leave room for tagline below
+    arch_path = FIG_DIR / "00_architecture.png"
+    add_image_safely(s, arch_path, Inches(1.0), Inches(2.0), w=Inches(11.3))
+
+    # === SLIDE 4 — The Dataset ===
+    s = new_slide(4, "OVERVIEW  ·  THE DATASET")
+    add_title(s, "Seven wells. Five zones. Eighteen thousand samples.")
+    add_subtitle(s, "Five petrophysical logs per sample: vsh, phit, perm, sw, depth.")
+
+    # 4 metric cards
+    y = Inches(2.4)
+    card_w = Inches(2.85)
+    gap = Inches(0.15)
+    metrics = [
+        ("18,167", "depth samples"),
+        ("7", "wells"),
+        ("5", "zones (A–E)"),
+        ("0.2 – 0.5 m", "sampling step"),
     ]
-    all_slides = slides_main + slides_backup
-    total = len(all_slides)
+    for i, (val, lbl) in enumerate(metrics):
+        x = MARGIN_L + (card_w + gap) * i
+        card = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, card_w, Inches(2.0))
+        card.fill.solid()
+        card.fill.fore_color.rgb = WHITE
+        card.line.color.rgb = TABLE_BORDER
+        card.line.width = Pt(0.5)
+        add_text(s, x + Inches(0.3), y + Inches(0.4), card_w - Inches(0.6),
+                 Inches(0.9), val, font_size=36, color=NAVY, bold=True, spacing=1.0)
+        add_text(s, x + Inches(0.3), y + Inches(1.35), card_w - Inches(0.6),
+                 Inches(0.3), lbl, font_size=11, color=MUTED)
 
-    for i, builder in enumerate(all_slides, start=1):
-        builder(prs)
-        # Add slide number to every slide except title
-        if i > 1:
-            add_slide_number(prs.slides[i - 1], i, total)
+    # Bottom info
+    add_horizontal_rule(s, Inches(5.0))
+    add_text(s, MARGIN_L, Inches(5.15), CONTENT_W, Inches(0.35),
+             "Quality issues by design",
+             font_size=12, color=NAVY, bold=True)
+    add_text(s, MARGIN_L, Inches(5.55), CONTENT_W, Inches(0.4),
+             "•   Well 5 sampled at 0.5 m vs 0.2 m elsewhere   ·   "
+             "Well 3 has 78 NaN porosity values   ·   "
+             "3,514 samples sit at the perm tool ceiling",
+             font_size=11, color=MUTED, spacing=1.4)
+    add_text(s, MARGIN_L, Inches(6.6), CONTENT_W, Inches(0.4),
+             "→  All three were uncovered, documented, and handled. Detail in the next four slides.",
+             font_size=11, color=NAVY, italic=True)
 
-    out_dir = REPO / "presentation"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "eigroup_reservoir_analytics.pptx"
-    prs.save(str(out_path))
-    print(f"Wrote {out_path}")
-    print(f"  Main slides:   {len(slides_main)}")
-    print(f"  Backup slides: {len(slides_backup)}")
+    # === SLIDE 5 — Part A: Data Integration ===
+    s = new_slide(5, "PART A  ·  DATA INTEGRATION")
+    add_title(s, "Joining 18,167 samples to 35 zone tops.")
+    add_subtitle(s, "Pandas merge_asof on per-well depth ranges, with boundary validation.")
+
+    # Left: pipeline steps
+    y0 = Inches(2.3)
+    steps = [
+        ("01", "Load 7 well CSVs + zones lookup",
+         "Schema validation. well_id column added per file."),
+        ("02", "merge_asof on depth (per well)",
+         "direction='backward', by='well_id'. Each sample assigned to its containing zone."),
+        ("03", "Compute per-well dz",
+         "depth.diff() per well_id. Critical: well_5 gets dz=0.5, others dz=0.2."),
+        ("04", "Validate boundaries + run QC",
+         "Range checks, NaN counts, saturation flag. Three real issues found."),
+    ]
+    sx = MARGIN_L
+    for i, (num, head, body) in enumerate(steps):
+        sy = y0 + Inches(1.05) * i
+        # Step number
+        add_text(s, sx, sy, Inches(0.5), Inches(0.6),
+                 num, font_size=22, color=GOLD, bold=True)
+        # Headline
+        add_text(s, sx + Inches(0.65), sy, Inches(11), Inches(0.4),
+                 head, font_size=14, color=NAVY, bold=True)
+        # Detail
+        add_text(s, sx + Inches(0.65), sy + Inches(0.4), Inches(11), Inches(0.5),
+                 body, font_size=10, color=MUTED, spacing=1.3)
+
+    add_text(s, MARGIN_L, Inches(6.8), CONTENT_W, Inches(0.3),
+             "→  Output: master_table.parquet (18,167 rows × 9 columns). Single source of truth.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 6 — Three Quality Issues ===
+    s = new_slide(6, "PART A  ·  WHAT WE FOUND")
+    add_title(s, "Three quality issues by design. All flagged.")
+    add_subtitle(s, "The dataset was deliberately constructed with these. We discovered all three.")
+
+    y0 = Inches(2.4)
+    card_h = Inches(3.6)
+    card_w = Inches(3.95)
+    gap = Inches(0.15)
+    issues = [
+        ("Tool saturation",
+         "3,514", "samples",
+         "Permeability values pinned at exactly 15,000 mD — the upper measurement limit.",
+         "19.34% of all samples",
+         WARNING),
+        ("Well 5 sampling",
+         "0.5 m", "step",
+         "Six wells sampled at 0.2 m; well 5 at 0.5 m. 2.5× difference per sample.",
+         "Solved by depth-weighting everywhere",
+         NAVY),
+        ("Well 3 missing data",
+         "78", "NaN phit",
+         "Distributed across zones in well 3. Consistent with tool malfunction at depths.",
+         "0.43% of total samples",
+         GOLD),
+    ]
+    for i, (head, big, lbl, body, footer, color) in enumerate(issues):
+        x = MARGIN_L + (card_w + gap) * i
+        card = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y0, card_w, card_h)
+        card.fill.solid()
+        card.fill.fore_color.rgb = WHITE
+        card.line.color.rgb = TABLE_BORDER
+        card.line.width = Pt(0.5)
+        # accent strip top
+        strip = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y0, card_w, Inches(0.08))
+        strip.fill.solid()
+        strip.fill.fore_color.rgb = color
+        strip.line.fill.background()
+        # Title
+        add_text(s, x + Inches(0.3), y0 + Inches(0.3), card_w - Inches(0.6),
+                 Inches(0.4), head, font_size=12, color=MUTED, bold=True)
+        # Big number
+        add_text(s, x + Inches(0.3), y0 + Inches(0.75), card_w - Inches(0.6),
+                 Inches(0.9), big, font_size=40, color=color, bold=True, spacing=1.0)
+        # Label
+        add_text(s, x + Inches(0.3), y0 + Inches(1.65), card_w - Inches(0.6),
+                 Inches(0.3), lbl, font_size=10, color=MUTED)
+        # Body
+        add_text(s, x + Inches(0.3), y0 + Inches(2.05), card_w - Inches(0.6),
+                 Inches(1.1), body, font_size=10, color=INK, spacing=1.4)
+        # Footer
+        add_text(s, x + Inches(0.3), y0 + Inches(3.15), card_w - Inches(0.6),
+                 Inches(0.3), footer, font_size=10, color=color, italic=True)
+
+    # === SLIDE 7 — The Discovery (Hero slide) ===
+    s = new_slide(7, "PART A  ·  THE DISCOVERY")
+    add_title(s, "A number that shouldn't exist.")
+
+    # Big number centered
+    add_text(s, MARGIN_L, Inches(1.8), CONTENT_W, Inches(2.3),
+             "3,514", font_size=160, color=NAVY, bold=True,
+             align=PP_ALIGN.CENTER, spacing=1.0)
+    add_text(s, MARGIN_L, Inches(4.4), CONTENT_W, Inches(0.45),
+             "of 18,167 samples report exactly 15,000 mD",
+             font_size=18, color=INK, align=PP_ALIGN.CENTER, italic=True)
+    add_text(s, MARGIN_L, Inches(4.95), CONTENT_W, Inches(0.4),
+             "— to machine precision. Not 14,985. Not 15,012. Exactly 15,000.",
+             font_size=13, color=MUTED, align=PP_ALIGN.CENTER)
+
+    # Bottom callout
+    add_quote_card(s, Inches(2.5), Inches(5.85), Inches(8.35), Inches(0.8),
+                   bg=HIGHLIGHT_BG, accent=GOLD)
+    add_text(s, Inches(2.75), Inches(5.95), Inches(8), Inches(0.6),
+             "A real measurement near a tool's ceiling is continuous. A discrete spike at exactly the maximum is the signature of saturation.",
+             font_size=11, color=INK, italic=True, spacing=1.4)
+
+    # === SLIDE 8 — What It Changes ===
+    s = new_slide(8, "PART A  ·  CONSEQUENCES OF THE DISCOVERY")
+    add_title(s, "Four downstream effects we had to handle.")
+    add_subtitle(s, "Every part of the pipeline below treats saturation as a first-class concern.")
+
+    y0 = Inches(2.4)
+    items = [
+        ("kh estimates",
+         "Lower bounds, not best estimates.",
+         "Saturated samples contribute 15,000 × dz to kh. Real perm is higher. Effect surfaces in every kh number reported."),
+        ("Average permeability",
+         "Dragged down toward the ceiling.",
+         "Arithmetic mean of 14,997 mD in Zone B is essentially the ceiling — not the true mean."),
+        ("Lorenz heterogeneity",
+         "Collapses to ~0 when saturation is severe.",
+         "Zone B's Lorenz ≈ 0.001 is mathematical inevitability, not a homogeneity finding. The instrument can't see the heterogeneity."),
+        ("Clustering on perm",
+         "Fails silently on saturated features.",
+         "Part D Zone B: two of three sub-zones get log_perm centroids of 4.175938 vs 4.176091 — indistinguishable."),
+    ]
+    row_h = Inches(1.0)
+    for i, (head, summary, body) in enumerate(items):
+        ry = y0 + row_h * i
+        # number / dot
+        dot = s.shapes.add_shape(MSO_SHAPE.OVAL, MARGIN_L, ry + Inches(0.18),
+                                  Inches(0.16), Inches(0.16))
+        dot.fill.solid()
+        dot.fill.fore_color.rgb = GOLD
+        dot.line.fill.background()
+        # head
+        add_text(s, MARGIN_L + Inches(0.4), ry, Inches(3.0), Inches(0.4),
+                 head, font_size=14, color=NAVY, bold=True)
+        # summary
+        add_text(s, MARGIN_L + Inches(3.5), ry, Inches(8.0), Inches(0.4),
+                 summary, font_size=12, color=INK, bold=True)
+        # body
+        add_text(s, MARGIN_L + Inches(3.5), ry + Inches(0.4), Inches(8.6),
+                 Inches(0.5), body, font_size=10, color=MUTED, spacing=1.3)
+
+    add_text(s, MARGIN_L, Inches(6.8), CONTENT_W, Inches(0.3),
+             "→  We did not drop saturated samples. We kept, counted, and surfaced them everywhere.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 9 — Part B intro ===
+    s = new_slide(9, "PART B  ·  PER-ZONE METRICS")
+    add_title(s, "Twelve metrics per (well, zone). Thirty-five rows.")
+    add_subtitle(s, "Five required by the case + seven bonus diagnostics we added.")
+
+    # Left column: required
+    add_text(s, MARGIN_L, Inches(2.3), Inches(5.9), Inches(0.4),
+             "REQUIRED  ·  case statement",
+             font_size=10, color=GOLD, bold=True)
+    required = [
+        ("Gross thickness", "sum(dz) over zone"),
+        ("Net thickness", "sum(dz) where vsh ≤ 0.5 AND phit ≥ 0.08"),
+        ("Avg phit (net)", "mean(phit) over net rows"),
+        ("Avg perm (net)", "mean(perm) over net rows"),
+        ("kh (flow capacity)", "sum(perm × dz) over net rows"),
+    ]
+    rx = MARGIN_L
+    ry = Inches(2.75)
+    for name, formula in required:
+        add_text(s, rx, ry, Inches(2.4), Inches(0.3), name,
+                 font_size=11, color=NAVY, bold=True)
+        add_text(s, rx + Inches(2.4), ry, Inches(3.5), Inches(0.3),
+                 formula, font_size=10, color=MUTED)
+        ry += Inches(0.5)
+
+    # Right column: bonus
+    add_text(s, Inches(6.8), Inches(2.3), Inches(6.0), Inches(0.4),
+             "BONUS  ·  earns its place",
+             font_size=10, color=GOLD, bold=True)
+    bonus = [
+        ("NTG",            "net/gross. Standard quality KPI."),
+        ("kh-weighted perm","Engineering-correct mean."),
+        ("Lorenz coefficient","Heterogeneity in [0,1]. Motivates Part D."),
+        ("n_samples_net",   "Sanity check."),
+        ("n_phit_nan",      "NaN exclusions counted (well 3)."),
+        ("n_perm_saturated_in_net", "Tool-cap count. Makes lower-bound visible."),
+        ("frac_saturated",  "Saturation as a fraction of net."),
+    ]
+    bx = Inches(6.8)
+    by = Inches(2.75)
+    for name, why in bonus:
+        add_text(s, bx, by, Inches(2.6), Inches(0.3), name,
+                 font_size=11, color=NAVY, bold=True)
+        add_text(s, bx + Inches(2.6), by, Inches(3.5), Inches(0.3),
+                 why, font_size=10, color=MUTED)
+        by += Inches(0.4)
+
+    # === SLIDE 10 — Heatmap ===
+    s = new_slide(10, "PART B  ·  WHERE THE FLOW IS")
+    add_title(s, "kh by well × zone. The whole field on one grid.")
+    add_subtitle(s, "Log-coloured cells. Saturated-sample counts annotated where present.")
+    add_image_safely(s, FIG_DIR / "01_kh_heatmap.png",
+                     Inches(1.5), Inches(2.1), w=Inches(10.3))
+    add_text(s, MARGIN_L, Inches(6.85), CONTENT_W, Inches(0.35),
+             "→  Zone B uniformly dominant across all wells. Zone D uniformly weak. Well 7 leads at 2.37 M mD·m.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 11 — 5 zone signatures ===
+    s = new_slide(11, "PART B  ·  FIVE ZONE SIGNATURES")
+    add_title(s, "Five zones. Five distinct stories.")
+    add_subtitle(s, "Field-level rollup of net thickness, kh, and saturation.")
+
+    # Build a table
+    rows, cols = 6, 7
+    tbl_x = MARGIN_L
+    tbl_y = Inches(2.4)
+    tbl_w = CONTENT_W
+    tbl_h = Inches(3.3)
+    tbl = s.shapes.add_table(rows, cols, tbl_x, tbl_y, tbl_w, tbl_h).table
+    # column widths
+    widths = [0.6, 1.05, 1.05, 1.3, 1.05, 1.4, 5.65]
+    total = sum(widths)
+    for i, w in enumerate(widths):
+        tbl.columns[i].width = Inches(w * 12.13 / total)
+
+    headers = ["Zone", "Net (m)", "NTG", "kh (mD·m)", "Avg perm", "Saturated", "Signature"]
+    for c, h in enumerate(headers):
+        style_table_cell(tbl.cell(0, c), text=h, font_size=10, bold=True,
+                         color=NAVY, bg=TABLE_HEADER_BG)
+
+    zone_data = [
+        ("A", "466.0", "0.63", "267 K", "572 mD", "0",
+         "Clean top reservoir — most cutoff-sensitive", SUCCESS),
+        ("B", "711.9", "0.93", "10.7 M  ⚠", "14,997 mD", "3,328",
+         "Dominant flow zone — every kh is a lower bound", NAVY),
+        ("C", "915.0", "0.84", "680 K", "743 mD", "17",
+         "Heterogeneous (Lorenz 0.65) — motivates Part D clustering", ORANGE),
+        ("D", "52.9", "0.10", "42", "0.79 mD", "0",
+         "Tight rock — non-reservoir at any cutoff", DANGER),
+        ("E", "586.8", "0.70", "1.2 M", "2,045 mD", "39",
+         "Deep reservoir — most defensible high-perm zone", ZONE_E),
+    ]
+    for r, (z, net, ntg, kh, perm, sat, sig, color) in enumerate(zone_data, start=1):
+        # alternating row background subtle
+        bg = TABLE_ROW_BG if r % 2 == 1 else RGBColor(0xFA, 0xF8, 0xF2)
+        style_table_cell(tbl.cell(r, 0), text=z, font_size=12, bold=True,
+                         color=color, bg=bg, align=PP_ALIGN.CENTER)
+        style_table_cell(tbl.cell(r, 1), text=net, font_size=11, color=INK, bg=bg, align=PP_ALIGN.RIGHT)
+        style_table_cell(tbl.cell(r, 2), text=ntg, font_size=11, color=INK, bg=bg, align=PP_ALIGN.RIGHT)
+        kh_color = WARNING if "⚠" in kh else INK
+        style_table_cell(tbl.cell(r, 3), text=kh, font_size=11, color=kh_color, bg=bg,
+                         bold="⚠" in kh, align=PP_ALIGN.RIGHT)
+        style_table_cell(tbl.cell(r, 4), text=perm, font_size=11, color=INK, bg=bg, align=PP_ALIGN.RIGHT)
+        sat_color = WARNING if int(sat.replace(",", "")) > 100 else INK
+        style_table_cell(tbl.cell(r, 5), text=sat, font_size=11, color=sat_color,
+                         bg=bg, bold=int(sat.replace(",", "")) > 100, align=PP_ALIGN.RIGHT)
+        style_table_cell(tbl.cell(r, 6), text=sig, font_size=10, color=MUTED, bg=bg)
+
+    add_text(s, MARGIN_L, Inches(6.4), CONTENT_W, Inches(0.4),
+             "→  Zone B's headline kh is a lower bound; Zone E is the largest defensible kh in the field at 1.2 M.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 12 — Well 7 Paradox ===
+    s = new_slide(12, "PART B  ·  THE WELL 7 PARADOX")
+    add_title(s, "Well 7 leads the kh ranking. But also leads in censoring.")
+    add_subtitle(s, "The two go together — and the implication is uncomfortable.")
+
+    y0 = Inches(2.4)
+    # Two big numbers
+    add_big_number(s, Inches(1.0), y0, "2.59 M",
+                   "mD·m total kh (rank 1 of 7)",
+                   value_size=60, value_color=NAVY)
+    add_big_number(s, Inches(5.7), y0, "798",
+                   "saturated samples (30% of well 7)",
+                   value_size=60, value_color=WARNING)
+    add_big_number(s, Inches(9.7), y0, "?",
+                   "true gap to the rest of the field",
+                   value_size=60, value_color=DANGER, w=Inches(3))
+
+    add_horizontal_rule(s, Inches(5.0))
+
+    add_text(s, MARGIN_L, Inches(5.2), CONTENT_W, Inches(0.5),
+             "Saturation makes apparent kh larger. The bound is loosest where the headline number is biggest.",
+             font_size=14, color=INK, italic=True, spacing=1.3)
+    add_quote_card(s, MARGIN_L, Inches(6.0), CONTENT_W, Inches(0.9), accent=NAVY)
+    add_text(s, MARGIN_L + Inches(0.2), Inches(6.1), CONTENT_W - Inches(0.4), Inches(0.8),
+             "Recommendation: any well-to-well kh comparison must report saturation fraction alongside the kh number, otherwise rankings are partly an instrument artefact.",
+             font_size=11, color=INK, spacing=1.4)
+
+    # === SLIDE 13 — Part C.1 intro ===
+    s = new_slide(13, "PART C.1  ·  CUTOFF SENSITIVITY")
+    add_title(s, "Nine cutoffs. 315 results. One robust picture.")
+    add_subtitle(s, "Default vsh = 0.5 is a literature value, not calibrated. Sweep instead.")
+
+    y0 = Inches(2.4)
+    # Why sweep
+    add_quote_card(s, MARGIN_L, y0, CONTENT_W, Inches(0.8), accent=GOLD)
+    add_text(s, MARGIN_L + Inches(0.2), y0 + Inches(0.1), CONTENT_W - Inches(0.4),
+             Inches(0.6),
+             "Without core or production data to calibrate against, picking one cutoff is a guess. The honest move: bound the conclusions by sweeping the threshold.",
+             font_size=12, color=INK, spacing=1.4, italic=True)
+    # Sweep grid
+    y1 = Inches(3.5)
+    add_text(s, MARGIN_L, y1, CONTENT_W, Inches(0.3),
+             "Sweep parameters", font_size=10, color=GOLD, bold=True)
+    grid_top = y1 + Inches(0.4)
+    grid_items = [
+        ("9", "vsh cutoffs"),
+        ("0.30 → 0.70", "range (step 0.05)"),
+        ("315", "result rows"),
+        ("600", "bootstrap resamples"),
+    ]
+    for i, (val, lbl) in enumerate(grid_items):
+        x = MARGIN_L + Inches(3.05) * i
+        add_text(s, x, grid_top, Inches(3.0), Inches(0.85),
+                 val, font_size=36, color=NAVY, bold=True, spacing=1.0)
+        add_text(s, x, grid_top + Inches(0.95), Inches(3.0), Inches(0.3),
+                 lbl, font_size=10, color=MUTED)
+
+    add_text(s, MARGIN_L, Inches(6.7), CONTENT_W, Inches(0.4),
+             "→  Next slide: the picture that bounds every conclusion in this submission.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 14 — Sensitivity curves ===
+    s = new_slide(14, "PART C.1  ·  SENSITIVITY CURVES")
+    add_title(s, "Two flat zones bracket three sensitive ones.")
+    add_subtitle(s, "NTG_field vs vsh cutoff. Bold = zone average. Thin = per-well trajectory.")
+    add_image_safely(s, FIG_DIR / "04_ntg_sensitivity.png",
+                     Inches(2.1), Inches(2.1), w=Inches(9.1))
+    add_text(s, MARGIN_L, Inches(6.85), CONTENT_W, Inches(0.35),
+             "→  Zone B robust at top (79-93%). Zone D robust failure (≤29%). A, C, E swing 50-79 pp.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 15 — Robust vs cutoff-driven ===
+    s = new_slide(15, "PART C.1  ·  ROBUST vs CUTOFF-DRIVEN")
+    add_title(s, "Which findings survive any reasonable cutoff?")
+    add_subtitle(s, "Five findings hold robustly. Three depend on the threshold.")
+
+    y0 = Inches(2.4)
+    # Two columns
+    col_w = Inches(5.9)
+    col_gap = Inches(0.35)
+    # Left — Robust
+    left_x = MARGIN_L
+    head_box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left_x, y0, col_w, Inches(0.5))
+    head_box.fill.solid()
+    head_box.fill.fore_color.rgb = SUCCESS
+    head_box.line.fill.background()
+    add_text(s, left_x + Inches(0.2), y0 + Inches(0.1), col_w - Inches(0.4),
+             Inches(0.3), "ROBUST  ·  survive every cutoff",
+             font_size=12, color=WHITE, bold=True)
+    robust = [
+        "Zone B is the field's dominant flow zone",
+        "Zone B kh is a lower bound (saturation)",
+        "Zone D is effectively non-reservoir",
+        "Well 7 leads on visible kh",
+        "Zone E is the most defensible high-perm zone",
+    ]
+    for i, item in enumerate(robust):
+        ry = y0 + Inches(0.65) + Inches(0.55) * i
+        # check mark
+        add_text(s, left_x + Inches(0.2), ry, Inches(0.3), Inches(0.4),
+                 "✓", font_size=14, color=SUCCESS, bold=True)
+        add_text(s, left_x + Inches(0.55), ry, col_w - Inches(0.7),
+                 Inches(0.4), item, font_size=11, color=INK, spacing=1.3)
+
+    # Right — Cutoff-driven
+    right_x = left_x + col_w + col_gap
+    head_box2 = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, right_x, y0, col_w, Inches(0.5))
+    head_box2.fill.solid()
+    head_box2.fill.fore_color.rgb = WARNING
+    head_box2.line.fill.background()
+    add_text(s, right_x + Inches(0.2), y0 + Inches(0.1), col_w - Inches(0.4),
+             Inches(0.3), "CUTOFF-DRIVEN  ·  depend on threshold",
+             font_size=12, color=WHITE, bold=True)
+    cutoff_driven = [
+        ("Zone A's NTG = 0.63", "ranges 0.15 to 0.94"),
+        ("Zone C's NTG = 0.84", "ranges 0.38 to 0.94"),
+        ("Zone E's NTG = 0.70", "ranges 0.32 to 0.89"),
+    ]
+    for i, (head, det) in enumerate(cutoff_driven):
+        ry = y0 + Inches(0.65) + Inches(0.55) * i
+        add_text(s, right_x + Inches(0.2), ry, Inches(0.3), Inches(0.4),
+                 "△", font_size=14, color=WARNING, bold=True)
+        add_text(s, right_x + Inches(0.55), ry, col_w - Inches(0.7),
+                 Inches(0.4),
+                 head, font_size=11, color=INK, bold=True, spacing=1.3)
+        add_text(s, right_x + Inches(0.55), ry + Inches(0.25),
+                 col_w - Inches(0.7), Inches(0.4),
+                 det, font_size=10, color=MUTED)
+
+    add_text(s, MARGIN_L, Inches(6.7), CONTENT_W, Inches(0.4),
+             "→  For cutoff-driven findings, we report ranges. For robust findings, point estimates are defensible.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 16 — Lorenz curves ===
+    s = new_slide(16, "PART C.2  ·  LORENZ HETEROGENEITY")
+    add_title(s, "The signal that motivated Part D.")
+    add_subtitle(s, "Flow concentration per zone. 0 = uniform, 1 = single super-streak.")
+    add_image_safely(s, FIG_DIR / "05_lorenz_curves.png",
+                     Inches(0.5), Inches(2.1), w=Inches(7.5))
+    # Right column with key values
+    rx = Inches(8.4)
+    ry = Inches(2.3)
+    add_text(s, rx, ry, Inches(4.5), Inches(0.3),
+             "Lorenz coefficients", font_size=10, color=GOLD, bold=True)
+    lorenz_vals = [
+        ("Zone C", "0.65", "real heterogeneity — needs sub-zoning", ORANGE),
+        ("Zone E", "~0.52", "moderate, typical clean sand", ZONE_E),
+        ("Zone A", "~0.45", "moderate", SUCCESS),
+        ("Zone D", "0.30-0.48", "noisy, small samples", DANGER),
+        ("Zone B", "~0.001", "saturation artefact", NAVY),
+    ]
+    ry_start = Inches(2.7)
+    for i, (zone, val, note, color) in enumerate(lorenz_vals):
+        cy = ry_start + Inches(0.75) * i
+        add_text(s, rx, cy, Inches(1.0), Inches(0.3),
+                 zone, font_size=12, color=color, bold=True)
+        add_text(s, rx + Inches(1.05), cy, Inches(1.2), Inches(0.3),
+                 val, font_size=14, color=NAVY, bold=True)
+        add_text(s, rx, cy + Inches(0.35), Inches(4.5), Inches(0.3),
+                 note, font_size=10, color=MUTED, italic=True)
+
+    add_text(s, MARGIN_L, Inches(6.85), CONTENT_W, Inches(0.35),
+             "→  Zone C's 0.65 is the highest non-artefactual value. That's the bridge to Part D.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 17 — Box plot ===
+    s = new_slide(17, "PART C.2  ·  ANSWERING THE CASE PROMPT")
+    add_title(s, "Which zones are consistently strong or weak?")
+    add_subtitle(s, "NTG and log(kh) distributions across 7 wells, per zone.")
+    add_image_safely(s, FIG_DIR / "09_zone_quality_boxplot.png",
+                     Inches(1.5), Inches(2.1), w=Inches(10.3))
+    add_text(s, MARGIN_L, Inches(6.85), CONTENT_W, Inches(0.35),
+             "→  Zone B tight at top (consistent strong). Zone D tight at bottom (consistent weak). Zone A widest box (variable).",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 18 — Part D intro ===
+    s = new_slide(18, "PART D  ·  SUB-ZONE DEFINITION")
+    add_title(s, "Pick one zone. Subdivide it. Consistent across wells.")
+    add_subtitle(s, "We picked Zone C. We also ran Zone B as a controlled negative result.")
+
+    # Two columns - why C, method
+    y0 = Inches(2.4)
+    # Left — Why Zone C
+    add_text(s, MARGIN_L, y0, Inches(5.9), Inches(0.4),
+             "WHY ZONE C", font_size=11, color=GOLD, bold=True)
+    why_c = [
+        ("Lorenz 0.65", "highest non-artefactual heterogeneity"),
+        ("1,094 m gross", "thickest zone in the field"),
+        ("Only 0.4% saturated", "instrument actually sees the perm range"),
+    ]
+    for i, (head, det) in enumerate(why_c):
+        cy = y0 + Inches(0.5) + Inches(0.85) * i
+        add_text(s, MARGIN_L, cy, Inches(5.9), Inches(0.3),
+                 head, font_size=14, color=NAVY, bold=True)
+        add_text(s, MARGIN_L, cy + Inches(0.35), Inches(5.9), Inches(0.3),
+                 det, font_size=11, color=MUTED, italic=True)
+    # Right — Method
+    rx = Inches(7.0)
+    add_text(s, rx, y0, Inches(5.9), Inches(0.4),
+             "METHOD", font_size=11, color=GOLD, bold=True)
+    method = [
+        ("K-Means on 6 features", "vsh, phit, log(perm), sw, eff_φ, hc_φ"),
+        ("Standardized + pooled fit", "z-score then fit on all 7 wells together"),
+        ("GMM cross-check", "second algorithm for structure validation"),
+    ]
+    for i, (head, det) in enumerate(method):
+        cy = y0 + Inches(0.5) + Inches(0.85) * i
+        add_text(s, rx, cy, Inches(5.9), Inches(0.3),
+                 head, font_size=14, color=NAVY, bold=True)
+        add_text(s, rx, cy + Inches(0.35), Inches(5.9), Inches(0.3),
+                 det, font_size=11, color=MUTED, italic=True)
+
+    add_text(s, MARGIN_L, Inches(6.7), CONTENT_W, Inches(0.4),
+             "→  The pooled fit is what makes 'same sub-zone across wells' operationally meaningful.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 19 — k=3 vs k=2 ===
+    s = new_slide(19, "PART D  ·  AN HONEST MODELLING CHOICE")
+    add_title(s, "k=2 wins by silhouette. We chose k=3 anyway.")
+    add_subtitle(s, "The case asks for 2–3 sub-zones. We document why three is the geological answer.")
+
+    y0 = Inches(2.4)
+    # Two boxes
+    box_w = Inches(5.9)
+    # k=2 box
+    box1 = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN_L, y0, box_w, Inches(2.0))
+    box1.fill.solid()
+    box1.fill.fore_color.rgb = WHITE
+    box1.line.color.rgb = TABLE_BORDER
+    box1.line.width = Pt(0.5)
+    add_text(s, MARGIN_L + Inches(0.3), y0 + Inches(0.2), box_w - Inches(0.6),
+             Inches(0.4), "k=2  ·  silhouette winner",
+             font_size=11, color=MUTED, bold=True)
+    add_text(s, MARGIN_L + Inches(0.3), y0 + Inches(0.6), box_w - Inches(0.6),
+             Inches(0.8), "0.394", font_size=48, color=MUTED, bold=True, spacing=1.0)
+    add_text(s, MARGIN_L + Inches(0.3), y0 + Inches(1.5), box_w - Inches(0.6),
+             Inches(0.5),
+             "Highest silhouette score, but a coarse 'good vs poor' split. Two operational tiers.",
+             font_size=10, color=MUTED, italic=True, spacing=1.3)
+
+    # k=3 box
+    box2 = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(7.0), y0, box_w, Inches(2.0))
+    box2.fill.solid()
+    box2.fill.fore_color.rgb = WHITE
+    box2.line.color.rgb = NAVY
+    box2.line.width = Pt(1.5)
+    add_text(s, Inches(7.3), y0 + Inches(0.2), box_w - Inches(0.6), Inches(0.4),
+             "k=3  ·  geological winner",
+             font_size=11, color=NAVY, bold=True)
+    add_text(s, Inches(7.3), y0 + Inches(0.6), box_w - Inches(0.6), Inches(0.8),
+             "0.276", font_size=48, color=NAVY, bold=True, spacing=1.0)
+    add_text(s, Inches(7.3), y0 + Inches(1.5), box_w - Inches(0.6), Inches(0.5),
+             "Three coherent tiers (poor / moderate / best). Three operational decisions.",
+             font_size=10, color=INK, italic=True, spacing=1.3)
+
+    # The reason
+    add_horizontal_rule(s, Inches(4.85))
+    add_text(s, MARGIN_L, Inches(5.0), CONTENT_W, Inches(0.4),
+             "Why three: every feature orders monotonically",
+             font_size=12, color=GOLD, bold=True)
+    add_text(s, MARGIN_L, Inches(5.45), CONTENT_W, Inches(0.4),
+             "vsh decreases (0.51 → 0.33 → 0.22)  ·  phit increases (0.14 → 0.20 → 0.25)  ·  perm increases (71 → 231 → 744 mD)",
+             font_size=11, color=MUTED, spacing=1.4)
+    add_text(s, MARGIN_L, Inches(5.85), CONTENT_W, Inches(0.4),
+             "sw decreases (0.62 → 0.47 → 0.32) — hydrocarbon content improves",
+             font_size=11, color=MUTED)
+
+    add_text(s, MARGIN_L, Inches(6.8), CONTENT_W, Inches(0.4),
+             "→  Random or spurious clusters do not order monotonically on multiple petrophysical features.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 20 — The result (3 sub-zones) ===
+    s = new_slide(20, "PART D  ·  THREE SUB-ZONES, CONSISTENT")
+    add_title(s, "Sub-zone 0 → 1 → 2. Quality improves monotonically.")
+    add_subtitle(s, "Pooled K-Means centroids on Zone C (3,571 net samples, 6 features).")
+
+    # Table of centroids
+    rows, cols = 4, 6
+    tbl_y = Inches(2.4)
+    tbl_h = Inches(2.2)
+    tbl = s.shapes.add_table(rows, cols, MARGIN_L, tbl_y, CONTENT_W, tbl_h).table
+    widths = [1.3, 1.5, 1.6, 1.6, 1.4, 4.7]
+    total = sum(widths)
+    for i, w in enumerate(widths):
+        tbl.columns[i].width = Inches(w * 12.13 / total)
+    headers = ["Sub-zone", "Avg vsh", "Avg phit", "Avg perm (mD)", "Avg sw", "Tier"]
+    for c, h in enumerate(headers):
+        style_table_cell(tbl.cell(0, c), text=h, font_size=11, bold=True,
+                         color=NAVY, bg=TABLE_HEADER_BG)
+
+    centroids = [
+        ("0", "0.510", "0.138", "~71",  "0.62", "Poor — high shale, low porosity, low perm", DANGER),
+        ("1", "0.331", "0.201", "~231", "0.47", "Moderate — typical sand", ORANGE),
+        ("2", "0.216", "0.246", "~744", "0.32", "Best — clean, high-perm drilling target", SUCCESS),
+    ]
+    for r, (sz, vsh, phit, perm, sw, tier, color) in enumerate(centroids, start=1):
+        bg = TABLE_ROW_BG
+        style_table_cell(tbl.cell(r, 0), text=sz, font_size=14, bold=True,
+                         color=color, bg=bg, align=PP_ALIGN.CENTER)
+        style_table_cell(tbl.cell(r, 1), text=vsh, font_size=11, color=INK,
+                         bg=bg, align=PP_ALIGN.RIGHT)
+        style_table_cell(tbl.cell(r, 2), text=phit, font_size=11, color=INK,
+                         bg=bg, align=PP_ALIGN.RIGHT)
+        style_table_cell(tbl.cell(r, 3), text=perm, font_size=11, color=INK,
+                         bg=bg, align=PP_ALIGN.RIGHT)
+        style_table_cell(tbl.cell(r, 4), text=sw, font_size=11, color=INK,
+                         bg=bg, align=PP_ALIGN.RIGHT)
+        style_table_cell(tbl.cell(r, 5), text=tier, font_size=11, color=color, bg=bg)
+
+    # Bottom highlight
+    add_quote_card(s, MARGIN_L, Inches(5.2), CONTENT_W, Inches(1.4), accent=GOLD)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(5.35), CONTENT_W - Inches(0.6),
+             Inches(0.45),
+             "All three sub-zones appear in all seven wells.",
+             font_size=14, color=NAVY, bold=True)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(5.8), CONTENT_W - Inches(0.6),
+             Inches(0.8),
+             "21 (well × sub-zone) rows  ·  no missing combinations  ·  perm gap sub-zone 0 → 2 is 5-7× in every well.",
+             font_size=11, color=INK, spacing=1.4, italic=True)
+
+    # === SLIDE 21 — LOWO ARI ===
+    s = new_slide(21, "PART D  ·  CROSS-WELL CONSISTENCY")
+    add_title(s, "Validation by leave-one-well-out.")
+    add_subtitle(s, "Fit on six wells, predict on the seventh, compare to pooled clustering.")
+
+    y0 = Inches(2.4)
+    # Big LOWO number
+    add_text(s, MARGIN_L, y0, Inches(4.5), Inches(1.5),
+             "0.991", font_size=110, color=NAVY, bold=True, spacing=1.0)
+    add_text(s, MARGIN_L, y0 + Inches(1.55), Inches(4.5), Inches(0.4),
+             "mean LOWO ARI", font_size=14, color=INK, bold=True)
+    add_text(s, MARGIN_L, y0 + Inches(2.0), Inches(4.5), Inches(0.4),
+             "Adjusted Rand Index", font_size=10, color=MUTED, italic=True)
+    add_text(s, MARGIN_L, y0 + Inches(2.5), Inches(4.5), Inches(0.6),
+             "1.0 = identical clustering. The structure is essentially invariant to which well is withheld.",
+             font_size=10, color=MUTED, spacing=1.4)
+
+    # Per-well grid
+    rx = Inches(6.6)
+    add_text(s, rx, y0, Inches(6.0), Inches(0.4),
+             "Per-fold scores", font_size=10, color=GOLD, bold=True)
+    lowo_data = [
+        (1, "0.963"), (2, "0.992"), (3, "1.000"),
+        (4, "0.984"), (5, "1.000"), (6, "1.000"),
+        (7, "0.996"),
+    ]
+    cell_w = Inches(0.78)
+    cell_h = Inches(0.78)
+    cell_gap = Inches(0.08)
+    cx = rx
+    cy = y0 + Inches(0.5)
+    for i, (well, val) in enumerate(lowo_data):
+        color = SUCCESS if val == "1.000" else NAVY
+        cb = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, cx, cy, cell_w, cell_h)
+        cb.fill.solid()
+        cb.fill.fore_color.rgb = color
+        cb.line.fill.background()
+        add_text(s, cx, cy + Inches(0.08), cell_w, Inches(0.3),
+                 f"w{well}", font_size=10, color=WHITE,
+                 bold=True, align=PP_ALIGN.CENTER)
+        add_text(s, cx, cy + Inches(0.4), cell_w, Inches(0.3),
+                 val, font_size=11, color=WHITE,
+                 bold=True, align=PP_ALIGN.CENTER)
+        cx += cell_w + cell_gap
+
+    # Insight box below the grid
+    add_text(s, rx, y0 + Inches(1.6), Inches(6.0), Inches(0.4),
+             "Three folds give exact 1.000.",
+             font_size=12, color=NAVY, bold=True)
+    add_text(s, rx, y0 + Inches(2.0), Inches(6.0), Inches(0.9),
+             "Withholding wells 3, 5, or 6 produces the identical pooled clustering. The other four folds match within 0.04 of 1.0.",
+             font_size=11, color=MUTED, spacing=1.4, italic=True)
+
+    # Bottom callout
+    add_quote_card(s, MARGIN_L, Inches(6.0), CONTENT_W, Inches(0.85), accent=NAVY)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(6.1), CONTENT_W - Inches(0.6),
+             Inches(0.7),
+             "Operational meaning: sub-zone 0 in well 1 has the same characteristic vsh, phit, perm, and sw as sub-zone 0 in well 7. Same rock, different depths.",
+             font_size=11, color=INK, italic=True, spacing=1.4)
+
+    # === SLIDE 22 — Drilling target ===
+    s = new_slide(22, "PART D  ·  THE DRILLING IMPLICATION")
+    add_title(s, "Sub-zone 2 — the natural drilling target.")
+    add_subtitle(s, "The clustering isn't academic. It changes the per-foot economics.")
+
+    y0 = Inches(2.3)
+    # Hero stat
+    add_text(s, MARGIN_L, y0, CONTENT_W, Inches(1.5),
+             "51%  of  kh",
+             font_size=96, color=NAVY, bold=True, align=PP_ALIGN.CENTER, spacing=1.0)
+    add_text(s, MARGIN_L, y0 + Inches(1.6), CONTENT_W, Inches(0.5),
+             "in just 29% of Zone C's thickness.",
+             font_size=20, color=INK, italic=True, align=PP_ALIGN.CENTER)
+
+    # 4 supporting stats
+    y1 = Inches(5.0)
+    stats = [
+        ("315.6 m", "field-wide thickness"),
+        ("~1,100 mD", "avg permeability"),
+        ("~7×",     "perm gap vs sub-zone 0"),
+        ("7 / 7",   "wells where present"),
+    ]
+    for i, (val, lbl) in enumerate(stats):
+        x = MARGIN_L + Inches(3.05) * i
+        add_text(s, x, y1, Inches(3.0), Inches(0.6),
+                 val, font_size=24, color=NAVY, bold=True)
+        add_text(s, x, y1 + Inches(0.65), Inches(3.0), Inches(0.3),
+                 lbl, font_size=10, color=MUTED)
+
+    add_text(s, MARGIN_L, Inches(6.8), CONTENT_W, Inches(0.4),
+             "→  Targeting sub-zone 2 captures roughly twice the flow per metre drilled vs an undifferentiated Zone C target.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 23 — Zone B negative result ===
+    s = new_slide(23, "PART D  ·  THE NEGATIVE RESULT")
+    add_title(s, "We ran Zone B as a controlled experiment.")
+    add_subtitle(s, "It failed in a specific, predictable way — and that failure is itself a finding.")
+
+    y0 = Inches(2.4)
+    # The smoking gun
+    add_text(s, MARGIN_L, y0, CONTENT_W, Inches(0.4),
+             "Zone B sub-zone centroids — log_perm values:",
+             font_size=12, color=MUTED, bold=True)
+
+    # Two centroid values side by side
+    box_w = Inches(5.9)
+    box_h = Inches(2.2)
+    box1 = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN_L, Inches(2.95), box_w, box_h)
+    box1.fill.solid()
+    box1.fill.fore_color.rgb = WHITE
+    box1.line.color.rgb = TABLE_BORDER
+    box1.line.width = Pt(0.5)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(3.1), box_w - Inches(0.6),
+             Inches(0.3), "SUB-ZONE 1", font_size=10, color=MUTED, bold=True)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(3.4), box_w - Inches(0.6),
+             Inches(1.0), "4.175938", font_size=48, color=NAVY, bold=True, spacing=1.0)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(4.45), box_w - Inches(0.6),
+             Inches(0.3), "≈ 14,985 mD", font_size=11, color=MUTED, italic=True)
+
+    box2 = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(7.0), Inches(2.95), box_w, box_h)
+    box2.fill.solid()
+    box2.fill.fore_color.rgb = WHITE
+    box2.line.color.rgb = TABLE_BORDER
+    box2.line.width = Pt(0.5)
+    add_text(s, Inches(7.3), Inches(3.1), box_w - Inches(0.6), Inches(0.3),
+             "SUB-ZONE 2", font_size=10, color=MUTED, bold=True)
+    add_text(s, Inches(7.3), Inches(3.4), box_w - Inches(0.6), Inches(1.0),
+             "4.176091", font_size=48, color=NAVY, bold=True, spacing=1.0)
+    add_text(s, Inches(7.3), Inches(4.45), box_w - Inches(0.6), Inches(0.3),
+             "≈ 14,995 mD", font_size=11, color=MUTED, italic=True)
+
+    # Gap callout
+    add_quote_card(s, MARGIN_L, Inches(5.4), CONTENT_W, Inches(0.95),
+                   bg=HIGHLIGHT_BG, accent=WARNING)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(5.5), Inches(4.5), Inches(0.4),
+             "Difference: 0.00015",
+             font_size=16, color=WARNING, bold=True)
+    add_text(s, MARGIN_L + Inches(0.3), Inches(5.9), CONTENT_W - Inches(0.6), Inches(0.5),
+             "10 mD on a permeability spanning 5 orders of magnitude. The tool can't tell them apart — and so neither can clustering.",
+             font_size=11, color=INK, spacing=1.4, italic=True)
+
+    add_text(s, MARGIN_L, Inches(6.65), CONTENT_W, Inches(0.4),
+             "→  Saturation defeats clustering on a saturated feature. Confirms what Lorenz already suggested.",
+             font_size=11, color=NAVY, italic=True)
+
+    # === SLIDE 24 — Lessons (key takeaways) ===
+    s = new_slide(24, "RECAP  ·  THE LESSONS")
+    add_title(s, "Three things we took away.")
+    add_subtitle(s, "Methodology lessons that apply beyond this dataset.")
+
+    y0 = Inches(2.4)
+    lessons = [
+        ("01", "Discovery first, computation second",
+         "Saturation could only be found by interrogating the data, not by accepting it. Every downstream finding rests on this single discovery."),
+        ("02", "Bound conclusions when calibration is missing",
+         "Without core or production data, sensitivity sweeps and uncertainty bounds replace single point estimates. Robust findings survive any reasonable cutoff."),
+        ("03", "Negative results matter as much as positive ones",
+         "Zone B's clustering failure is as informative as Zone C's success. It confirms — at a different level — what Lorenz already suggested."),
+    ]
+    for i, (num, head, body) in enumerate(lessons):
+        ry = y0 + Inches(1.35) * i
+        add_text(s, MARGIN_L, ry, Inches(0.7), Inches(0.7),
+                 num, font_size=32, color=GOLD, bold=True)
+        add_text(s, MARGIN_L + Inches(0.85), ry, Inches(11), Inches(0.4),
+                 head, font_size=15, color=NAVY, bold=True)
+        add_text(s, MARGIN_L + Inches(0.85), ry + Inches(0.45),
+                 Inches(11.3), Inches(0.85), body, font_size=11, color=MUTED, spacing=1.4)
+
+    # === SLIDE 25 — What's next ===
+    s = new_slide(25, "RECAP  ·  WHAT'S NEXT")
+    add_title(s, "What another two weeks would buy.")
+    add_subtitle(s, "Three concrete next steps to lift the conclusions from internal-consistency to external validation.")
+
+    y0 = Inches(2.4)
+    nexts = [
+        ("Core data validation",
+         "Compare sub-zone boundaries to described lithology in core photos and measured core perm. Gold-standard external validation.",
+         "Highest value, requires core lab access"),
+        ("Production log overlay",
+         "Match PLT/spinner inflow profiles against sub-zone assignments. Tests whether sub-zone 2 actually produces more per metre.",
+         "Operational validation — confirms drilling implication"),
+        ("Saturation-corrected kh bounds",
+         "Estimate the true Zone B kh range using sandstone perm priors. Pair the current lower bound with an order-of-magnitude upper bound.",
+         "Resolves the largest single uncertainty in the deliverable"),
+    ]
+    for i, (head, body, footer) in enumerate(nexts):
+        ry = y0 + Inches(1.35) * i
+        dot = s.shapes.add_shape(MSO_SHAPE.OVAL, MARGIN_L, ry + Inches(0.18),
+                                  Inches(0.18), Inches(0.18))
+        dot.fill.solid()
+        dot.fill.fore_color.rgb = GOLD
+        dot.line.fill.background()
+        add_text(s, MARGIN_L + Inches(0.5), ry, Inches(11), Inches(0.4),
+                 head, font_size=14, color=NAVY, bold=True)
+        add_text(s, MARGIN_L + Inches(0.5), ry + Inches(0.4), Inches(11.5), Inches(0.5),
+                 body, font_size=11, color=INK, spacing=1.4)
+        add_text(s, MARGIN_L + Inches(0.5), ry + Inches(0.95), Inches(11.5), Inches(0.3),
+                 footer, font_size=10, color=MUTED, italic=True)
+
+    # === SLIDE 26 — Thank you ===
+    s = prs.slides.add_slide(blank)
+    add_background(s)
+    add_left_accent_strip(s, NAVY)
+    add_text(s, Inches(0.85), Inches(2.5), Inches(11), Inches(0.4),
+             "RESERVOIR ANALYTICS  ·  MAY 2026", font_size=11,
+             color=GOLD, bold=True)
+    add_text(s, Inches(0.85), Inches(3.0), Inches(11), Inches(1.5),
+             "Thank you.", font_size=72, color=INK, bold=True, spacing=1.0)
+    add_horizontal_rule(s, Inches(4.7), x=Inches(0.85), w=Inches(2.5),
+                        color=GOLD, height=Pt(1.5))
+    add_text(s, Inches(0.85), Inches(4.95), Inches(11), Inches(0.4),
+             "Kamil Muradli", font_size=18, color=INK, bold=True)
+    add_text(s, Inches(0.85), Inches(5.4), Inches(11), Inches(0.4),
+             "eiGroup Associate Data Scientist Assessment", font_size=12, color=MUTED)
+    add_text(s, Inches(0.85), Inches(5.85), Inches(11), Inches(0.4),
+             "Submitted May 2026", font_size=10, color=PAGE_NUM)
+    add_text(s, Inches(0.85), Inches(6.4), Inches(11), Inches(0.4),
+             "Questions and detailed walkthrough documents available in /outputs/reports/",
+             font_size=11, color=NAVY, italic=True)
+    add_page_number(s, 26)
+
+    # Save
+    prs.save(str(OUT_PATH))
+    print(f"Wrote {OUT_PATH}")
+    print(f"Slides: {len(prs.slides)}")
 
 
 if __name__ == "__main__":
-    main()
+    build_presentation()

@@ -250,6 +250,127 @@ def render_report_to_markdown(report: dict[str, Any], output_path: Path) -> Path
         "",
         _sat_for_markdown(report["perm_saturation"]).to_markdown(index=False, floatfmt=".4f"),
         "",
+        "## Join Strategy",
+        "",
+        "**Combining the well logs with `zones.csv` to produce the master table.**",
+        "",
+        "### The problem",
+        "",
+        "Two independent data sources must be combined:",
+        "",
+        "- **Well logs** (`well_<id>.csv`): one row per depth sample, "
+        "five measurements (vsh, phit, sw, perm) per row. No zone label.",
+        "- **Zone tops** (`zones.csv`): 35 rows recording only the depth at which "
+        "each zone *begins* in each well, not the interval.",
+        "",
+        "The data dictionary specifies that each zone extends from its listed "
+        "depth down to the top of the next zone in the same well (or to the "
+        "bottom of the log for the last zone). Every depth sample must be "
+        "assigned the zone it belongs to.",
+        "",
+        "### Why an equality join does not work",
+        "",
+        "Log sample depths form a regular grid (1850.00, 1850.20, 1850.40, ...) "
+        "while zone-top depths are irregular (1850.07, 1925.00, ...). These "
+        "values never coincide, so a standard `INNER JOIN ON depth` would "
+        "return zero rows.",
+        "",
+        "What is needed is an **inequality join**: for each log sample, find "
+        "the zone top whose depth is closest *at-or-below* the sample, "
+        "within the same well.",
+        "",
+        "### Chosen approach — `pandas.merge_asof`",
+        "",
+        "```python",
+        "merged = pd.merge_asof(",
+        '    left=logs_sorted,',
+        '    right=zones_sorted,',
+        '    on="depth",',
+        '    by="well",',
+        '    direction="backward",',
+        ")",
+        "```",
+        "",
+        "| Parameter | Value | Why |",
+        "|---|---|---|",
+        '| `on` | `"depth"` | The inequality key — depth comparison drives the match. |',
+        '| `by` | `"well"` | Match scope. Each sample is matched only against zone tops in the **same** well; the search never crosses well boundaries. |',
+        '| `direction` | `"backward"` | For each sample, pick the largest zone-top depth ≤ the sample depth — the most recent zone that has already begun. |',
+        "",
+        "**Why `backward`, not `forward` or `nearest`.** For a sample at depth "
+        "1900 m in well_1, where zones A and B begin at 1850 and 1925:",
+        "",
+        "- `backward` returns Zone A (1850 ≤ 1900) — correct: A is the most recent to have begun.",
+        "- `forward` returns Zone B (1925 ≥ 1900) — wrong: B has not begun yet.",
+        "- `nearest` returns Zone B (closer in distance) — wrong: proximity is not the geological criterion.",
+        "",
+        "Only `backward` matches the data dictionary's interval definition.",
+        "",
+        "**Performance.** On 18,167 samples × 35 zone tops, `merge_asof` "
+        "performs roughly 93 K operations versus 636 K for a nested loop — "
+        "and runs the inner loop in pandas' C extension. End-to-end join "
+        "time is about 50 ms.",
+        "",
+        "### Spec-compliance fix — the snap step",
+        "",
+        "A literal `merge_asof` on the raw data leaves 7 samples unassigned. "
+        "In every one of the 7 wells, the log starts a few centimetres "
+        "**above** the first listed zone top:",
+        "",
+        "| Well | Log start | First zone top | Gap |",
+        "|---|---|---|---|",
+        "| 1 | 1850.00 | 1850.07 | 0.07 m |",
+        "| 2 | 2010.00 | 2010.03 | 0.03 m |",
+        "| 3 | 1920.00 | 1920.01 | 0.01 m |",
+        "| 4 | 2100.00 | 2100.06 | 0.06 m |",
+        "| 5 | 1970.00 | 1970.01 | 0.01 m |",
+        "| 6 | 1800.00 | 1800.07 | 0.07 m |",
+        "| 7 | 2050.00 | 2050.04 | 0.04 m |",
+        "",
+        "Without correction, each well's first sample would receive "
+        "`zone = NaN` — a direct spec violation.",
+        "",
+        "**The fix.** Before merging, each well's earliest zone top is moved "
+        "up to that well's first log depth. Maximum snap distance is 7 cm — "
+        "well below the 20 cm sampling resolution, so no calculated metric "
+        "changes. The raw CSVs are never modified; snapping happens on a "
+        "copy of the zones DataFrame inside `assign_zones`.",
+        "",
+        "Post-snap, zone assignment is **100% complete** — zero NaN zones.",
+        "",
+        "### Per-sample thickness `dz`",
+        "",
+        "After zone assignment, each sample needs a thickness `dz` so kh "
+        "(= sum of perm·dz) can be computed. The data dictionary defines:",
+        "",
+        "```",
+        "dz[i]    = depth[i+1] - depth[i]   # forward difference",
+        "dz[last] = dz[last-1]              # repeat the last step",
+        "```",
+        "",
+        "This is computed **per well**, not globally, because sampling "
+        "steps differ. Well_5 uses 0.5 m; the other six wells use 0.2 m. "
+        "A global `np.diff` on the concatenated table would produce "
+        "nonsense at well boundaries (e.g. well_4 ends at 2750 m, "
+        "well_5 starts at 1970 m, giving a boundary 'thickness' of −780 m).",
+        "",
+        "### Summary",
+        "",
+        "| Step | Tool | Purpose |",
+        "|---|---|---|",
+        "| 1. Load 7 well CSVs | `loader.load_all_wells` | One row per depth sample |",
+        "| 2. Load zones.csv | `loader.load_zones` | Zone tops, 35 rows |",
+        "| 3. Snap earliest zone tops | `joiner.assign_zones` | Spec compliance — 7 cm max correction |",
+        "| 4. Sort both frames by depth | (within `assign_zones`) | `merge_asof` precondition |",
+        "| 5. `merge_asof` inequality join | `joiner.assign_zones` | Assigns `zone` column |",
+        "| 6. Compute per-well `dz` | `joiner.compute_dz` | Per-sample thickness for kh |",
+        "| 7. Cache as Parquet | `cli.quality_cmd` | Single source of truth for Parts B/C/D |",
+        "",
+        "The resulting master table — 18,167 rows with columns "
+        "(well, depth, vsh, phit, sw, perm, zone, dz) — is cached as "
+        "`data/processed/master_table.parquet` and serves as the single "
+        "source of truth for every downstream deliverable.",
+        "",
     ]
     output_path.write_text("\n".join(lines), encoding="utf-8")
     logger.info(f"Wrote quality report to {output_path}")

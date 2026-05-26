@@ -5,7 +5,7 @@ technical task. Loads multi-well log data, computes per-zone reservoir
 metrics, sweeps net-reservoir cutoffs to expose volumetric sensitivity,
 and identifies cross-well sub-zone facies via unsupervised clustering.
 
-**Author:** Kamil Muradli
+**Author:** Elnar Babayev
 **Submission date:** May 27, 2026
 **Task deadline:** May 27, 2026
 
@@ -17,7 +17,7 @@ and identifies cross-well sub-zone facies via unsupervised clustering.
 - **35 (well, zone) metrics** + bonus (NTG, kh-weighted perm, Lorenz)
 - **315-row vsh sweep** + 21,000 bootstrap kh resamples
 - **10 charts** (5 field views + 3 clustering per zone, PNG + interactive HTML)
-- **105 pytest tests**, 96-100% coverage on hot paths
+- **133 pytest tests**, 96-100% coverage on hot paths
 - **5 CLI commands**, single-machine reproducible from raw CSVs in <2 minutes
 
 ---
@@ -82,7 +82,7 @@ eigroup-reservoir-analytics/
 │   ├── clustering/
 │   │   └── subzone.py        # Part D: pooled K-Means + GMM + LOWO
 │   └── cli.py                # Typer CLI orchestrator
-├── tests/                    # 105 pytest tests, all green
+├── tests/                    # 133 pytest tests, all green
 ├── scripts/                  # Helper scripts (smoke test, dashboard, slides)
 ├── outputs/
 │   ├── figures/              # All charts (PNG + interactive HTML)
@@ -117,11 +117,11 @@ override the config for one-off runs.
 ## Key real-data findings
 
 1. **Permeability tool saturation at 15,000 mD** — 14–30% of every well's samples
-   are at the cap. Zone B is 88% saturated. kh estimates on saturated zones
+   are at the cap. Zone B has 99.85% of net samples at the 15,000 mD upper limit. kh estimates on saturated zones
    are conservative lower bounds, not best estimates.
 2. **Zone D is tight rock** — NTG never exceeds 32% even at the loosest vsh
    cutoff. Fails on porosity, not shale. Bypass.
-3. **Zone C splits into 3 reproducible sub-zones** across all 7 wells (LOWO ARI 0.97).
+3. **Zone C splits into 3 reproducible sub-zones** across all 7 wells (LOWO ARI 0.991).
    Sub-zone 2 (top of Zone C) holds 48% of Zone C kh in 29% of its thickness.
 4. **Zone B clustering fails informatively** — clustering reproduces tool
    censoring, not lithology. Documented as a method-awareness finding.
@@ -136,7 +136,7 @@ See `outputs/reports/executive_summary.md` for the full write-up.
 ## Tests
 
 ```bash
-pytest -v                       # all 105 tests
+pytest -v                       # all 133 tests
 pytest --cov=src                # with coverage report
 pytest tests/test_metrics.py    # one module
 ```

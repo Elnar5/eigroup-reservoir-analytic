@@ -89,3 +89,20 @@ configs/local/
 
 # Raw data — assignment CSVs, NOT committed (provided separately)
 data/raw/*.csv
+
+# Build artifacts
+*.backup
+~$*
+.DS_Store
+htmlcov/
+.coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+__pycache__/
+*.pyc
+
+# Old AI workflow artifacts
+DAY_*.md
+İnterview_prep.md
